@@ -25,7 +25,7 @@
 //  self.navigationItem.rightBarButtonItem = addButton;
 //  self.detailViewController = (DetailViewController *)[[self.splitViewController.viewControllers lastObject] topViewController];
   
-  [self insertNewObject:@"Render1"];
+  [self insertNewObject:@"AVPlayer"];
   [self insertNewObject:@"Render2"];
 }
 

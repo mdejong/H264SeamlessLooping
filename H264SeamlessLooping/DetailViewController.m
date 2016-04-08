@@ -8,7 +8,12 @@
 
 #import "DetailViewController.h"
 
+@import AVFoundation;
+@import AVKit;
+
 @interface DetailViewController ()
+
+@property (nonatomic, retain) AVPlayerViewController* avPlayerViewController;
 
 @end
 
@@ -19,7 +24,7 @@
 #pragma mark - Managing the detail item
 
 - (void) dealloc {
-  NSLog(@"dealloc %p with tag \"%@\"", self, self.tag);
+  NSLog(@"DetailViewController : dealloc %p with tag \"%@\"", self, self.tag);
 }
 
 - (void)configureView {
@@ -27,6 +32,37 @@
   if (self.tag) {
       self.detailDescriptionLabel.text = [self.tag description];
   }
+  
+  if ([self.tag isEqualToString:@"AVPlayer"]) {
+    [self loadAVPlayerLayer];
+  }
+}
+
+- (void) loadAVPlayerLayer
+{
+  [super viewDidLoad];
+  UIView *view = self.view;
+  NSString *resourceName = @"CarOverWhiteBG.m4v";
+  NSString* movieFilePath = [[NSBundle mainBundle]
+                             pathForResource:resourceName ofType:nil];
+  NSAssert(movieFilePath, @"movieFilePath is nil");
+  NSURL *fileURL = [NSURL fileURLWithPath:movieFilePath];
+  
+  AVPlayerViewController *playerViewController = [[AVPlayerViewController alloc] init];
+  playerViewController.player = [AVPlayer playerWithURL:fileURL];
+  self.avPlayerViewController = playerViewController;
+  [self resizePlayerToViewSize];
+  [view addSubview:playerViewController.view];
+  view.autoresizesSubviews = TRUE;
+}
+
+- (void) resizePlayerToViewSize
+{
+  CGRect frame = self.view.frame;
+  
+  NSLog(@" avPlayerViewController set to frame size %d, %d", (int)frame.size.width, (int)frame.size.height);
+  
+  self.avPlayerViewController.view.frame = frame;
 }
 
 - (void)viewDidLoad {
