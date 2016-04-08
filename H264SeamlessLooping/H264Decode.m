@@ -235,10 +235,6 @@
   
   NSLog(@"video track time duration %0.3f", duration);
   
-  int numFrames = round(duration);
-  
-  NSLog(@"estimated number of frames %d", numFrames);
-  
   AVAssetReaderSampleReferenceOutput *aVAssetReaderOutput = [AVAssetReaderSampleReferenceOutput assetReaderSampleReferenceOutputWithTrack:videoTrack];
 
   NSAssert(aVAssetReaderOutput, @"AVAssetReaderVideoCompositionOutput failed");
@@ -267,23 +263,19 @@
   
   NSMutableArray *mArr = [NSMutableArray array];
   
-  // Read N frames, convert to BGRA pixels
+  // Read frames of CoreMedia data, don't know how many frames
+  // there will be.
   
-  for ( int i = 0; i < numFrames; i++ ) {
+  while ( 1 ) {
     
     CMSampleBufferRef sampleBuffer = NULL;
     sampleBuffer = [aVAssetReaderOutput copyNextSampleBuffer];
     
-    // Output has not been decoded to BGRA or YUV buffer.
+    if (sampleBuffer == nil) {
+      break;
+    }
     
-    // Process BGRA data in buffer, crop and then read and combine
-    
-    CVImageBufferRef imageBufferRef = CMSampleBufferGetImageBuffer(sampleBuffer);
-    assert(imageBufferRef);
-    
-    CVPixelBufferRef pixBuffer = imageBufferRef;
-    
-    [mArr addObject:(__bridge id)pixBuffer];
+    [mArr addObject:(__bridge id)sampleBuffer];
     
     CFRelease(sampleBuffer);
   }
@@ -382,7 +374,7 @@
   assert(success);
   //CVPixelBufferRelease(buffer);
   
-  // Write C0, C1, C2
+  // Frames
   
   for ( int i = 1; i < (int)[frames count]; i++ ) {
     CMTime present          = CMTimeMake(i * 600, 600);

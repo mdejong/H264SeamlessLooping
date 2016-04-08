@@ -11,9 +11,15 @@
 @import AVFoundation;
 @import AVKit;
 
+#import "H264Decode.h"
+
 @interface DetailViewController ()
 
+@property (nonatomic, copy) NSString *resourceName;
+
 @property (nonatomic, retain) AVPlayerViewController* avPlayerViewController;
+
+@property (nonatomic, retain) AVSampleBufferDisplayLayer *sampleBufferLayer;
 
 @property (nonatomic, assign) BOOL isWaitingToPlay;
 
@@ -42,7 +48,7 @@
 {
   [super viewDidLoad];
   UIView *view = self.view;
-  NSString *resourceName = @"CarOverWhiteBG.m4v";
+  NSString *resourceName = self.resourceName;
   NSString* movieFilePath = [[NSBundle mainBundle]
                              pathForResource:resourceName ofType:nil];
   NSAssert(movieFilePath, @"movieFilePath is nil");
@@ -77,6 +83,7 @@
   NSLog(@" avPlayerViewController set to frame size %d, %d", (int)frame.size.width, (int)frame.size.height);
   
   self.avPlayerViewController.view.frame = frame;
+  self.sampleBufferLayer.frame = frame;
 }
 
 - (void) aVPlayerViewControllerDonePlaying:(NSNotification*)notification
@@ -142,12 +149,17 @@
 
 - (void)viewDidLoad {
   [super viewDidLoad];
-  // Do any additional setup after loading the view, typically from a nib.
   
-  //[self configureView];
+  self.resourceName = @"CarOverWhiteBG.m4v";
   
-  if ([self.tag isEqualToString:@"AVPlayer"]) {
+  if ([self.tag hasPrefix:@"AVPlayer"]) {
     [self loadAVPlayerLayer];
+  } else if ([self.tag hasPrefix:@"CoreMedia"]) {
+    [self loadCoreMedia];
+  } else if (self.tag == nil || [self.tag isEqualToString:@""]) {
+    // nop
+  } else {
+    NSAssert(0, @"unsupported tag \"%@\"", self.tag);
   }
 }
 
@@ -160,6 +172,60 @@
 - (void)didReceiveMemoryWarning {
   [super didReceiveMemoryWarning];
   // Dispose of any resources that can be recreated.
+}
+
+// Decompress CoreMedia sample data directly from a .mov container
+// without decompressing the samples.
+
+- (void) loadCoreMedia
+{
+  NSString *resourceName = self.resourceName;
+  NSString* movieFilePath = [[NSBundle mainBundle]
+                             pathForResource:resourceName ofType:nil];
+  NSAssert(movieFilePath, @"movieFilePath is nil");
+  
+  NSArray *coreMediaSamplesArr = [H264Decode decodeCoreMediaFramesFromMOV:movieFilePath];
+  
+  NSLog(@"num samples %d", (int)coreMediaSamplesArr.count);
+  
+  // Setup AVSampleBufferDisplayLayer to display samples from memory
+  
+  self.sampleBufferLayer = [[AVSampleBufferDisplayLayer alloc] init];
+  
+  self.sampleBufferLayer.frame = self.view.layer.frame;
+  
+  self.sampleBufferLayer.backgroundColor = [UIColor redColor].CGColor;
+  
+  [self.view.layer addSublayer:self.sampleBufferLayer];
+  
+  CMTimebaseRef controlTimebase;
+  CMTimebaseCreateWithMasterClock(CFAllocatorGetDefault(), CMClockGetHostTimeClock(), &controlTimebase );
+  
+  self.sampleBufferLayer.controlTimebase = controlTimebase;
+  CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, CMTimeMake(5, 1));
+  CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
+  
+  int numSampleBuffers = (int) coreMediaSamplesArr.count;
+  
+  for (int i = 0; i < numSampleBuffers; i++ ) {
+    CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) coreMediaSamplesArr[i];
+    
+    CMVideoFormatDescriptionRef formatDesc = CMSampleBufferGetFormatDescription(sampleBufferRef);
+    
+    if (formatDesc) {
+      [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+    } else {
+      NSLog(@"skip CMSampleBufferRef at offset %d", i);
+    }
+    
+    // Print time now
+    
+    //CMTimeShow(CMTimebaseGetTime(self.sampleBufferLayer.controlTimebase));
+  }
+  
+  [self.sampleBufferLayer setNeedsDisplay];
+  
+  return;
 }
 
 @end

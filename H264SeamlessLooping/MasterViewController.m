@@ -20,13 +20,15 @@
   [super viewDidLoad];
   // Do any additional setup after loading the view, typically from a nib.
   //self.navigationItem.leftBarButtonItem = self.editButtonItem;
+  
+  self.navigationItem.title = @"Looping";
 
 //  UIBarButtonItem *addButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(insertNewObject:)];
 //  self.navigationItem.rightBarButtonItem = addButton;
 //  self.detailViewController = (DetailViewController *)[[self.splitViewController.viewControllers lastObject] topViewController];
   
-  [self insertNewObject:@"AVPlayer"];
-  [self insertNewObject:@"Render2"];
+  [self insertNewObject:@"AVPlayer builtin"];
+  [self insertNewObject:@"CoreMedia samples"];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
