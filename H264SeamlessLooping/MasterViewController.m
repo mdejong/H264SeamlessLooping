@@ -19,11 +19,14 @@
 - (void)viewDidLoad {
   [super viewDidLoad];
   // Do any additional setup after loading the view, typically from a nib.
-  self.navigationItem.leftBarButtonItem = self.editButtonItem;
+  //self.navigationItem.leftBarButtonItem = self.editButtonItem;
 
-  UIBarButtonItem *addButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(insertNewObject:)];
-  self.navigationItem.rightBarButtonItem = addButton;
-  self.detailViewController = (DetailViewController *)[[self.splitViewController.viewControllers lastObject] topViewController];
+//  UIBarButtonItem *addButton = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemAdd target:self action:@selector(insertNewObject:)];
+//  self.navigationItem.rightBarButtonItem = addButton;
+//  self.detailViewController = (DetailViewController *)[[self.splitViewController.viewControllers lastObject] topViewController];
+  
+  [self insertNewObject:@"Render1"];
+  [self insertNewObject:@"Render2"];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -36,12 +39,12 @@
   // Dispose of any resources that can be recreated.
 }
 
-- (void)insertNewObject:(id)sender {
+- (void)insertNewObject:(NSString*)tag {
   if (!self.objects) {
       self.objects = [[NSMutableArray alloc] init];
   }
-  [self.objects insertObject:[NSDate date] atIndex:0];
-  NSIndexPath *indexPath = [NSIndexPath indexPathForRow:0 inSection:0];
+  [self.objects addObject:tag];
+  NSIndexPath *indexPath = [NSIndexPath indexPathForRow:[self.objects count] inSection:0];
   [self.tableView insertRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
 }
 
@@ -50,9 +53,10 @@
 - (void)prepareForSegue:(UIStoryboardSegue *)segue sender:(id)sender {
   if ([[segue identifier] isEqualToString:@"showDetail"]) {
       NSIndexPath *indexPath = [self.tableView indexPathForSelectedRow];
-      NSDate *object = self.objects[indexPath.row];
+      NSString *tag = self.objects[indexPath.row];
       DetailViewController *controller = (DetailViewController *)[[segue destinationViewController] topViewController];
-      [controller setDetailItem:object];
+      controller.tag = tag;
+      [controller configureView];
       controller.navigationItem.leftBarButtonItem = self.splitViewController.displayModeButtonItem;
       controller.navigationItem.leftItemsSupplementBackButton = YES;
   }
@@ -78,7 +82,7 @@
 
 - (BOOL)tableView:(UITableView *)tableView canEditRowAtIndexPath:(NSIndexPath *)indexPath {
   // Return NO if you do not want the specified item to be editable.
-  return YES;
+  return NO;
 }
 
 - (void)tableView:(UITableView *)tableView commitEditingStyle:(UITableViewCellEditingStyle)editingStyle forRowAtIndexPath:(NSIndexPath *)indexPath {
