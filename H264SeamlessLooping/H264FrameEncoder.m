@@ -93,12 +93,19 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
     // Configure session parameters
     
     [self configureSessionParameters];
+    
+    self.frameOffset = 0;
   }
   
   assert(self->session);
   
+  int offset = self.frameOffset;
+  self.frameOffset += 1;
+  
   CMTime pts = CMTimeMake(0, 600);
-  CMTime dur = CMTimeMake(600, 600);
+  CMTime dur = CMTimeMake(600 * offset, 600);
+  
+  self.sampleBuffer = NULL;
   
   status = VTCompressionSessionEncodeFrame(session, cvPixelBuffer, pts, dur, NULL, NULL, NULL);
   
@@ -106,8 +113,6 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
     NSLog(@"VTCompressionSessionEncodeFrame status not `noErr`: %d\n", (int)status);
     return FALSE;
   }
-  
-  VTCompressionSessionEndPass(session, 0, NULL);
   
   return TRUE;
 }
@@ -181,7 +186,9 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   //NSNumber *bitrate = @(1000000); // 2756
   //NSNumber *bitrate = @(1250000); // 3283
   //NSNumber *bitrate = @(1500000); // 3697
-  NSNumber *bitrate = @(2000000); // 4121
+  //NSNumber *bitrate = @(2000000); // 4121
+  
+  NSNumber *bitrate = @(2000000000);
 
   status = VTSessionSetProperty(session,
                                 kVTCompressionPropertyKey_AverageBitRate,

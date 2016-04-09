@@ -26,6 +26,9 @@
 
 @property (nonatomic, assign) BOOL isWaitingToPlay;
 
+@property (nonatomic, copy) NSArray *decodedBuffers;
+@property (nonatomic, assign) int decodedBufferOffset;
+
 @end
 
 @implementation DetailViewController
@@ -212,42 +215,60 @@
   
   // Begin to decode frames
   
-  //H264FrameDecoder *frameDecoder = [[H264FrameDecoder alloc] init];
-  
   NSMutableArray *encodedH264Buffers = [NSMutableArray array];
   
   int numSampleBuffers = (int) coreVideoSamplesArr.count;
   
+  __block int totalEncodeNumBytes = 0;
+  
   for (int i = 0; i < numSampleBuffers; i++ ) @autoreleasepool {
     CVPixelBufferRef pixBuffer = (__bridge CVPixelBufferRef) coreVideoSamplesArr[i];
     
-    NSLog(@"CVPixelBufferRef: %@", pixBuffer);
+    //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
+
+    frameEncoder.sampleBufferBlock = ^(CMSampleBufferRef sampleBuffer) {
+      [encodedH264Buffers addObject:(__bridge id)sampleBuffer];
+      
+      int width = (int) CVPixelBufferGetWidth(pixBuffer);
+      int height = (int) CVPixelBufferGetHeight(pixBuffer);
+      
+      int numBytes = (int) CMSampleBufferGetSampleSize(sampleBuffer, 0);
+      
+      NSLog(@"encoded buffer at dims %4d x %4d as %6d H264 bytes", width, height, numBytes);
+      
+      totalEncodeNumBytes += numBytes;
+    };
     
     [frameEncoder encodeH264CoreMediaFrame:pixBuffer];
     
     while (frameEncoder.sampleBuffer == nil) {
-        NSLog(@"sleep 0.10: at frame %d", i);
+      NSLog(@"sleep 0.10: at frame %d", i);
       [NSThread sleepForTimeInterval:0.01];
     }
-    
-    CMSampleBufferRef encodedH264Buffer = frameEncoder.sampleBuffer;
-    
-    [encodedH264Buffers addObject:(__bridge id)encodedH264Buffer];
-    
-    int width = (int) CVPixelBufferGetWidth(pixBuffer);
-    int height = (int) CVPixelBufferGetHeight(pixBuffer);
-    
-    int numBytes = (int) CMSampleBufferGetSampleSize(encodedH264Buffer, 0);
-    
-    NSLog(@"encoded buffer at dims %4d x %4d as %d H264 bytes", width, height, numBytes);
   }
   
   [frameEncoder endSession];
 
+  NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
+  
   // Display first encoded frame
   
-  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[0];
-  [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+//  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[0];
+  
+//  [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+  
+  NSTimer *timer = [NSTimer timerWithTimeInterval:1.0/30
+                                           target:self
+                                         selector:@selector(timerFired:)
+                                         userInfo:NULL
+                                          repeats:TRUE];
+  
+  [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSDefaultRunLoopMode];
+
+  self.decodedBufferOffset = 0;
+  self.decodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
+  
+//  NSMutableArray *encodedH264Buffers = [NSMutableArray array];
 
   // Display all frames
   
@@ -264,7 +285,33 @@
 //  CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
 //  CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
   
+//  [self.sampleBufferLayer setNeedsDisplay];
+  
+  return;
+}
+                    
+- (void) timerFired:(id)timer {
+  int offset = self.decodedBufferOffset;
+  
+  NSLog(@"timerFired %d", offset);
+  
+  assert(self.decodedBuffers);
+  
+  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.decodedBuffers[offset];
+  
+  CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBufferRef, YES);
+  CFMutableDictionaryRef dict = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0);
+  CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
+  
+  [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+  
   [self.sampleBufferLayer setNeedsDisplay];
+  
+  self.decodedBufferOffset = self.decodedBufferOffset + 1;
+  
+  if (self.decodedBufferOffset >= self.decodedBuffers.count) {
+    [timer invalidate];
+  }
   
   return;
 }

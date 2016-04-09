@@ -17,6 +17,8 @@
 
 @interface H264FrameEncoder : NSObject
 
+@property (nonatomic, assign) int frameOffset;
+
 @property (nonatomic, assign) CMSampleBufferRef sampleBuffer;
 
 @property (nonatomic, copy) void (^sampleBufferBlock)(CMSampleBufferRef);
