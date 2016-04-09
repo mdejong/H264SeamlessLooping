@@ -175,15 +175,4 @@ void VideoToolboxCallback(
   }
   
   return;
-  
-  /*
-  
-  if (status != noErr || !imageBuffer) {
-    fprintf(stderr, "Error %d decoding frame!\n", status);
-    return;
-  }
-  
-  fprintf(stdout, "Got frame data.\n");
-   
-  */
 }

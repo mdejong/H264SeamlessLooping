@@ -25,12 +25,6 @@
 + (NSArray*) decodeCoreVideoFramesFromMOV:(NSString*)movPath
                                     asYUV:(BOOL)asYUV;
 
-// Given a .mov, read the H264 frames of data out of the asset file
-// but without actually decoding the encoded H264 data. This method
-// returns an array of CoreMedia buffers.
-
-+ (NSArray*) decodeCoreMediaFramesFromMOV:(NSString*)movPath;
-
 // Write a .mov that contains the CoreVideo frames in arr
 
 + (BOOL) encodeCoreVideoFramesAsMOV:(NSString*)movPath

@@ -14,7 +14,6 @@
 		3CE33B611CB84AB80096D6AA /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 3CE33B5F1CB84AB80096D6AA /* Main.storyboard */; };
 		3CE33B631CB84AB80096D6AA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3CE33B621CB84AB80096D6AA /* Assets.xcassets */; };
 		3CE33B661CB84AB80096D6AA /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 3CE33B641CB84AB80096D6AA /* LaunchScreen.storyboard */; };
-		3CE33B711CB84C4B0096D6AA /* H264KeyframeLoader.m in Sources */ = {isa = PBXBuildFile; fileRef = 3CE33B701CB84C4B0096D6AA /* H264KeyframeLoader.m */; };
 		3CE33B781CB8551E0096D6AA /* H264Decode.m in Sources */ = {isa = PBXBuildFile; fileRef = 3CE33B731CB8551E0096D6AA /* H264Decode.m */; };
 		3CE33B791CB8551E0096D6AA /* H264FrameDecoder.m in Sources */ = {isa = PBXBuildFile; fileRef = 3CE33B751CB8551E0096D6AA /* H264FrameDecoder.m */; };
 		3CE33B7A1CB8551E0096D6AA /* H264FrameEncoder.m in Sources */ = {isa = PBXBuildFile; fileRef = 3CE33B771CB8551E0096D6AA /* H264FrameEncoder.m */; };
@@ -34,8 +33,6 @@
 		3CE33B621CB84AB80096D6AA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3CE33B651CB84AB80096D6AA /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		3CE33B671CB84AB80096D6AA /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		3CE33B6F1CB84C4B0096D6AA /* H264KeyframeLoader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = H264KeyframeLoader.h; sourceTree = "<group>"; };
-		3CE33B701CB84C4B0096D6AA /* H264KeyframeLoader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = H264KeyframeLoader.m; sourceTree = "<group>"; };
 		3CE33B721CB8551E0096D6AA /* H264Decode.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = H264Decode.h; sourceTree = "<group>"; };
 		3CE33B731CB8551E0096D6AA /* H264Decode.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = H264Decode.m; sourceTree = "<group>"; };
 		3CE33B741CB8551E0096D6AA /* H264FrameDecoder.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = H264FrameDecoder.h; sourceTree = "<group>"; };
@@ -75,8 +72,6 @@
 		3CE33B521CB84AB80096D6AA /* H264SeamlessLooping */ = {
 			isa = PBXGroup;
 			children = (
-				3CE33B6F1CB84C4B0096D6AA /* H264KeyframeLoader.h */,
-				3CE33B701CB84C4B0096D6AA /* H264KeyframeLoader.m */,
 				3CE33B721CB8551E0096D6AA /* H264Decode.h */,
 				3CE33B731CB8551E0096D6AA /* H264Decode.m */,
 				3CE33B761CB8551E0096D6AA /* H264FrameEncoder.h */,
@@ -179,7 +174,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				3CE33B791CB8551E0096D6AA /* H264FrameDecoder.m in Sources */,
-				3CE33B711CB84C4B0096D6AA /* H264KeyframeLoader.m in Sources */,
 				3CE33B581CB84AB80096D6AA /* AppDelegate.m in Sources */,
 				3CE33B5B1CB84AB80096D6AA /* MasterViewController.m in Sources */,
 				3CE33B7A1CB8551E0096D6AA /* H264FrameEncoder.m in Sources */,
