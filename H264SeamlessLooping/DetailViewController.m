@@ -16,6 +16,8 @@
 #import "H264FrameEncoder.h"
 #import "H264FrameDecoder.h"
 
+static int dumpFramesImages = 0;
+
 @interface DetailViewController ()
 
 @property (nonatomic, copy) NSString *resourceName;
@@ -232,16 +234,16 @@
   __block int totalEncodeNumBytes = 0;
   
   for (int i = 0; i < numSampleBuffers; i++ ) @autoreleasepool {
-    // VTCreateCGImageFromCVPixelBuffer()
+    // use VTCreateCGImageFromCVPixelBuffer() ?
     
     CVPixelBufferRef pixBuffer = (__bridge CVPixelBufferRef) coreVideoSamplesArr[i];
     
     int width = (int) CVPixelBufferGetWidth(pixBuffer);
     int height = (int) CVPixelBufferGetHeight(pixBuffer);
     
-    // 1024 x 768
+    // 1920 x 1080 is Full HD and the upper limit of H264 render size for iPad devices
     
-    CGSize renderSize = CGSizeMake(1024, 768);
+    CGSize renderSize = CGSizeMake(1920, 1080);
     //int renderWidth = (int) renderSize.width;
     //int renderHeight = (int) renderSize.height;
     
@@ -262,6 +264,7 @@
     UIImage *rerenderedInputImg = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     
+    if (dumpFramesImages)
     {
     NSString *dumpFilename = [NSString stringWithFormat:@"rerendered_frame%d.png", i];
     NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
@@ -287,6 +290,7 @@
     UIImage *largerRenderedImg = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     
+    if (dumpFramesImages)
     {
       NSString *dumpFilename = [NSString stringWithFormat:@"larger_frame%d.png", i];
       NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
@@ -383,7 +387,9 @@
 - (void) timerFired:(id)timer {
   int offset = self.decodedBufferOffset;
   
+#if defined(DEBUG)
   NSLog(@"timerFired %d", offset);
+#endif // DEBUG
   
   assert(self.decodedBuffers);
   
@@ -411,7 +417,7 @@
   
   // Manually decode the frame data and emit the pixels as PNG
   
-  if ((0)) {
+  if (dumpFramesImages) {
     NSString *dumpFilename = [NSString stringWithFormat:@"dump_decoded_%0d.png", offset];
     NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
     
