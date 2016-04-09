@@ -32,5 +32,11 @@
 // invoked on dealloc
 
 - (void) endSession;
-  
+
+// If the caller wants to explicitly block until the frame decode operation
+// is finished then this method can be invoked. Don't invoke in the main
+// thread, or else!
+
+- (void) waitForFrame;
+
 @end

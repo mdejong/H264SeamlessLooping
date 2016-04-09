@@ -227,6 +227,8 @@
   __block int totalEncodeNumBytes = 0;
   
   for (int i = 0; i < numSampleBuffers; i++ ) @autoreleasepool {
+    // VTCreateCGImageFromCVPixelBuffer()
+    
     CVPixelBufferRef pixBuffer = (__bridge CVPixelBufferRef) coreVideoSamplesArr[i];
     
     int width = (int) CVPixelBufferGetWidth(pixBuffer);
@@ -315,12 +317,14 @@
     
     [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
 
-    CVPixelBufferRelease(largerBuffer);
+    [frameEncoder waitForFrame];
     
-    while (frameEncoder.sampleBuffer == nil) {
-      NSLog(@"sleep 0.10: at frame %d", i);
-      [NSThread sleepForTimeInterval:0.01];
-    }
+//    while (frameEncoder.sampleBuffer == nil) {
+//      NSLog(@"sleep 0.10: at frame %d", i);
+//      [NSThread sleepForTimeInterval:0.01];
+//    }
+    
+    CVPixelBufferRelease(largerBuffer);
   }
   
   [frameEncoder endSession];
@@ -396,6 +400,8 @@
   
   // Manually decode the frame data and emit the pixels as PNG
   
+  if ((0)) {
+  
   NSString *dumpFilename = [NSString stringWithFormat:@"dump_decoded_%0d.png", offset];
   NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
   
@@ -431,6 +437,8 @@
   [frameDecoder waitForFrame];
   
   [frameDecoder endSession];
+    
+  }
   
   return;
 }

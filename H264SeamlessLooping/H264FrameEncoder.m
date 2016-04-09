@@ -102,8 +102,8 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   int offset = self.frameOffset;
   self.frameOffset += 1;
   
-  CMTime pts = CMTimeMake(0, 600);
-  CMTime dur = CMTimeMake(600 * offset, 600);
+  CMTime pts = CMTimeMake(600 * offset, 600);
+  CMTime dur = CMTimeMake(600, 600);
   
   self.sampleBuffer = NULL;
   
@@ -132,6 +132,24 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   }
   
   return;
+}
+
+// If the caller wants to explicitly block until the frame decode operation
+// is finished then this method can be invoked. Don't invoke in the main
+// thread, or else!
+
+- (void) waitForFrame
+{
+  OSStatus status;
+  
+  int offset = self.frameOffset - 1;
+  if (offset < 0) {
+    offset = 0;
+  }
+  
+  CMTime pts = CMTimeMake(600 * offset, 600);
+  
+  status = VTCompressionSessionCompleteFrames(session, pts);
 }
 
 - (void) configureSessionParameters
@@ -233,7 +251,6 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
     NSLog(@"VTCompressionSessionPrepareToEncodeFrames %d\n", (int)status);
     return;
   }
-  
 }
 
 @end
