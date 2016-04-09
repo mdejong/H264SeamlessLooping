@@ -82,6 +82,11 @@
   self.isWaitingToPlay = TRUE;
 }
 
+- (void)viewDidLayoutSubviews {
+  // Adjust buffer dimensions
+  [self resizePlayerToViewSize];
+}
+
 - (void) resizePlayerToViewSize
 {
   CGRect frame = self.view.frame;
@@ -89,7 +94,9 @@
   NSLog(@" avPlayerViewController set to frame size %d, %d", (int)frame.size.width, (int)frame.size.height);
   
   self.avPlayerViewController.view.frame = frame;
+  
   self.sampleBufferLayer.frame = frame;
+  self.sampleBufferLayer.position = CGPointMake(CGRectGetMidX(self.sampleBufferLayer.bounds), CGRectGetMidY(self.sampleBufferLayer.bounds));
 }
 
 - (void) aVPlayerViewControllerDonePlaying:(NSNotification*)notification
@@ -194,15 +201,13 @@
   
   self.sampleBufferLayer = [[AVSampleBufferDisplayLayer alloc] init];
   
-  self.sampleBufferLayer.frame = self.view.layer.frame;
-  
-  self.sampleBufferLayer.position = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
-  
   self.sampleBufferLayer.videoGravity = AVLayerVideoGravityResizeAspect;
   
-  self.sampleBufferLayer.backgroundColor = [UIColor redColor].CGColor;
+  self.sampleBufferLayer.backgroundColor = [UIColor blackColor].CGColor;
   
   [self.view.layer addSublayer:self.sampleBufferLayer];
+  
+  [self resizePlayerToViewSize];
   
   // Decode H.264 encoded data from file and then reencode the image data
   // as keyframes that can be access randomly.
@@ -250,6 +255,9 @@
   [frameEncoder endSession];
 
   NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
+  
+  // FIXME: need to decode each frame and then save as a series of images so as to check
+  // the quality of the encoded video.
   
   // Display first encoded frame
   
@@ -299,6 +307,8 @@
   
   CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.decodedBuffers[offset];
   
+  // Force display as soon as possible
+  
   CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBufferRef, YES);
   CFMutableDictionaryRef dict = (CFMutableDictionaryRef)CFArrayGetValueAtIndex(attachments, 0);
   CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
@@ -312,6 +322,44 @@
   if (self.decodedBufferOffset >= self.decodedBuffers.count) {
     [timer invalidate];
   }
+  
+  // Manually decode the frame data and emit the pixels as PNG
+  
+  NSString *dumpFilename = [NSString stringWithFormat:@"dump_decoded_%0d.png", offset];
+  NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+  
+  H264FrameDecoder *frameDecoder = [[H264FrameDecoder alloc] init];
+  
+  frameDecoder.pixelType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+  
+  frameDecoder.pixelBufferBlock = ^(CVPixelBufferRef pixBuffer){
+    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
+    
+    int width = (int) CVPixelBufferGetWidth(pixBuffer);
+    int height = (int) CVPixelBufferGetHeight(pixBuffer);
+    
+    CGSize imgSize = CGSizeMake(width, height);
+    
+    UIGraphicsBeginImageContext(imgSize);
+    CGRect rect;
+    rect.origin = CGPointZero;
+    rect.size   = imgSize;
+    UIImage *remImage = [UIImage imageWithCIImage:ciImage];
+    [remImage drawInRect:rect];
+    UIImage *outputImg = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    NSData *pngData = UIImagePNGRepresentation(outputImg);
+    [pngData writeToFile:tmpPath atomically:TRUE];
+    
+    NSLog(@"wrote \"%@\"", tmpPath);
+  };
+  
+  [frameDecoder decodeH264CoreMediaFrame:sampleBufferRef];
+  
+  [frameDecoder waitForFrame];
+  
+  [frameDecoder endSession];
   
   return;
 }

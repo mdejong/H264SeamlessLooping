@@ -139,10 +139,15 @@ void VideoToolboxCallback(
 
 - (void) waitForFrame
 {
-  // Flush in-process frames.
-  VTDecompressionSessionFinishDelayedFrames(session);
+  OSStatus status;
+  
   // Block until our callback has been called with the last frame.
-  VTDecompressionSessionWaitForAsynchronousFrames(session);
+  status = VTDecompressionSessionWaitForAsynchronousFrames(session);
+  
+  if (status != noErr) {
+    NSLog(@"VTDecompressionSessionWaitForAsynchronousFrames status not `noErr`: %d\n", (int)status);
+    return;
+  }
 }
 
 @end
