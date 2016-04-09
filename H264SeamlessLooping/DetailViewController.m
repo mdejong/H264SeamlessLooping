@@ -24,6 +24,8 @@
 
 @property (nonatomic, retain) AVSampleBufferDisplayLayer *sampleBufferLayer;
 
+@property (nonatomic, retain) NSTimer *displayH264Timer;
+
 @property (nonatomic, assign) BOOL isWaitingToPlay;
 
 @property (nonatomic, copy) NSArray *decodedBuffers;
@@ -180,6 +182,9 @@
 {
   [super viewDidDisappear:animated];
   [self removeObserverForTimesRanges];
+  
+  [self.displayH264Timer invalidate];
+  self.displayH264Timer = nil;
 }
 
 - (void)didReceiveMemoryWarning {
@@ -237,8 +242,8 @@
     // 1024 x 768
     
     CGSize renderSize = CGSizeMake(1024, 768);
-    int renderWidth = (int) renderSize.width;
-    int renderHeight = (int) renderSize.height;
+    //int renderWidth = (int) renderSize.width;
+    //int renderHeight = (int) renderSize.height;
     
     // Render CoreVideo to a NxN square so that square pixels do not distort
     
@@ -346,6 +351,8 @@
                                          userInfo:NULL
                                           repeats:TRUE];
   
+  self.displayH264Timer = timer;
+  
   [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSDefaultRunLoopMode];
 
   self.decodedBufferOffset = 0;
@@ -395,49 +402,51 @@
   self.decodedBufferOffset = self.decodedBufferOffset + 1;
   
   if (self.decodedBufferOffset >= self.decodedBuffers.count) {
-    [timer invalidate];
+//    [timer invalidate];
+    
+    // Keep looping
+    
+    self.decodedBufferOffset = 0;
   }
   
   // Manually decode the frame data and emit the pixels as PNG
   
   if ((0)) {
-  
-  NSString *dumpFilename = [NSString stringWithFormat:@"dump_decoded_%0d.png", offset];
-  NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-  
-  H264FrameDecoder *frameDecoder = [[H264FrameDecoder alloc] init];
-  
-  frameDecoder.pixelType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
-  
-  frameDecoder.pixelBufferBlock = ^(CVPixelBufferRef pixBuffer){
-    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
+    NSString *dumpFilename = [NSString stringWithFormat:@"dump_decoded_%0d.png", offset];
+    NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
     
-    int width = (int) CVPixelBufferGetWidth(pixBuffer);
-    int height = (int) CVPixelBufferGetHeight(pixBuffer);
+    H264FrameDecoder *frameDecoder = [[H264FrameDecoder alloc] init];
     
-    CGSize imgSize = CGSizeMake(width, height);
+    frameDecoder.pixelType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
     
-    UIGraphicsBeginImageContext(imgSize);
-    CGRect rect;
-    rect.origin = CGPointZero;
-    rect.size   = imgSize;
-    UIImage *remImage = [UIImage imageWithCIImage:ciImage];
-    [remImage drawInRect:rect];
-    UIImage *outputImg = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
+    frameDecoder.pixelBufferBlock = ^(CVPixelBufferRef pixBuffer){
+      CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
+      
+      int width = (int) CVPixelBufferGetWidth(pixBuffer);
+      int height = (int) CVPixelBufferGetHeight(pixBuffer);
+      
+      CGSize imgSize = CGSizeMake(width, height);
+      
+      UIGraphicsBeginImageContext(imgSize);
+      CGRect rect;
+      rect.origin = CGPointZero;
+      rect.size   = imgSize;
+      UIImage *remImage = [UIImage imageWithCIImage:ciImage];
+      [remImage drawInRect:rect];
+      UIImage *outputImg = UIGraphicsGetImageFromCurrentImageContext();
+      UIGraphicsEndImageContext();
+      
+      NSData *pngData = UIImagePNGRepresentation(outputImg);
+      [pngData writeToFile:tmpPath atomically:TRUE];
+      
+      NSLog(@"wrote \"%@\"", tmpPath);
+    };
     
-    NSData *pngData = UIImagePNGRepresentation(outputImg);
-    [pngData writeToFile:tmpPath atomically:TRUE];
+    [frameDecoder decodeH264CoreMediaFrame:sampleBufferRef];
     
-    NSLog(@"wrote \"%@\"", tmpPath);
-  };
-  
-  [frameDecoder decodeH264CoreMediaFrame:sampleBufferRef];
-  
-  [frameDecoder waitForFrame];
-  
-  [frameDecoder endSession];
+    [frameDecoder waitForFrame];
     
+    [frameDecoder endSession];
   }
   
   return;
