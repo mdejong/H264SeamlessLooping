@@ -30,8 +30,8 @@
 
 + (OSType) getPixelType
 {
-//  const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-  const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+  const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+//  const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
   return movieEncodePixelFormatType;
 }
 
@@ -106,9 +106,10 @@
   
   NSLog(@"video track time duration %0.3f", duration);
   
-  int numFrames = round(duration);
+  // Don't know how many frames at this point
   
-  NSLog(@"estimated number of frames %d", numFrames);
+  //int numFrames = round(duration);
+  //NSLog(@"estimated number of frames %d", numFrames);
   
   AVAssetReaderTrackOutput *aVAssetReaderOutput = [[AVAssetReaderTrackOutput alloc]
                                                    initWithTrack:videoTrack outputSettings:videoSettings];
@@ -143,10 +144,14 @@
   
   // Read N frames, convert to BGRA pixels
   
-  for ( int i = 0; i < numFrames; i++ ) {
+  for ( int i = 0; 1; i++ ) {
   
     CMSampleBufferRef sampleBuffer = NULL;
     sampleBuffer = [aVAssetReaderOutput copyNextSampleBuffer];
+    
+    if (sampleBuffer == nil) {
+      break;
+    }
     
     // Process BGRA data in buffer, crop and then read and combine
     

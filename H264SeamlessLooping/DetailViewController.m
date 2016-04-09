@@ -13,6 +13,9 @@
 
 #import "H264Decode.h"
 
+#import "H264FrameEncoder.h"
+#import "H264FrameDecoder.h"
+
 @interface DetailViewController ()
 
 @property (nonatomic, copy) NSString *resourceName;
@@ -184,44 +187,82 @@
                              pathForResource:resourceName ofType:nil];
   NSAssert(movieFilePath, @"movieFilePath is nil");
   
-  NSArray *coreMediaSamplesArr = [H264Decode decodeCoreMediaFramesFromMOV:movieFilePath];
-  
-  NSLog(@"num samples %d", (int)coreMediaSamplesArr.count);
-  
   // Setup AVSampleBufferDisplayLayer to display samples from memory
   
   self.sampleBufferLayer = [[AVSampleBufferDisplayLayer alloc] init];
   
   self.sampleBufferLayer.frame = self.view.layer.frame;
   
+  self.sampleBufferLayer.position = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetMidY(self.view.bounds));
+  
+  self.sampleBufferLayer.videoGravity = AVLayerVideoGravityResizeAspect;
+  
   self.sampleBufferLayer.backgroundColor = [UIColor redColor].CGColor;
   
   [self.view.layer addSublayer:self.sampleBufferLayer];
   
-  CMTimebaseRef controlTimebase;
-  CMTimebaseCreateWithMasterClock(CFAllocatorGetDefault(), CMClockGetHostTimeClock(), &controlTimebase );
+  // Decode H.264 encoded data from file and then reencode the image data
+  // as keyframes that can be access randomly.
+
+  // FIXME: Using BGRA here, but should keep as YUV for max perf
   
-  self.sampleBufferLayer.controlTimebase = controlTimebase;
-  CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, CMTimeMake(5, 1));
-  CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
+  NSArray *coreVideoSamplesArr = [H264Decode decodeCoreVideoFramesFromMOV:movieFilePath asYUV:TRUE];
   
-  int numSampleBuffers = (int) coreMediaSamplesArr.count;
+  H264FrameEncoder *frameEncoder = [[H264FrameEncoder alloc] init];
   
-  for (int i = 0; i < numSampleBuffers; i++ ) {
-    CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) coreMediaSamplesArr[i];
+  // Begin to decode frames
+  
+  //H264FrameDecoder *frameDecoder = [[H264FrameDecoder alloc] init];
+  
+  NSMutableArray *encodedH264Buffers = [NSMutableArray array];
+  
+  int numSampleBuffers = (int) coreVideoSamplesArr.count;
+  
+  for (int i = 0; i < numSampleBuffers; i++ ) @autoreleasepool {
+    CVPixelBufferRef pixBuffer = (__bridge CVPixelBufferRef) coreVideoSamplesArr[i];
     
-    CMVideoFormatDescriptionRef formatDesc = CMSampleBufferGetFormatDescription(sampleBufferRef);
+    NSLog(@"CVPixelBufferRef: %@", pixBuffer);
     
-    if (formatDesc) {
-      [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
-    } else {
-      NSLog(@"skip CMSampleBufferRef at offset %d", i);
+    [frameEncoder encodeH264CoreMediaFrame:pixBuffer];
+    
+    while (frameEncoder.sampleBuffer == nil) {
+        NSLog(@"sleep 0.10: at frame %d", i);
+      [NSThread sleepForTimeInterval:0.01];
     }
     
-    // Print time now
+    CMSampleBufferRef encodedH264Buffer = frameEncoder.sampleBuffer;
     
-    //CMTimeShow(CMTimebaseGetTime(self.sampleBufferLayer.controlTimebase));
+    [encodedH264Buffers addObject:(__bridge id)encodedH264Buffer];
+    
+    int width = (int) CVPixelBufferGetWidth(pixBuffer);
+    int height = (int) CVPixelBufferGetHeight(pixBuffer);
+    
+    int numBytes = (int) CMSampleBufferGetSampleSize(encodedH264Buffer, 0);
+    
+    NSLog(@"encoded buffer at dims %4d x %4d as %d H264 bytes", width, height, numBytes);
   }
+  
+  [frameEncoder endSession];
+
+  // Display first encoded frame
+  
+  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[0];
+  [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+
+  // Display all frames
+  
+//  for (int i = 0; i < numSampleBuffers; i++ ) {
+//    CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[i];
+//    
+//    [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+//  }
+//
+//  CMTimebaseRef controlTimebase;
+//  CMTimebaseCreateWithMasterClock(CFAllocatorGetDefault(), CMClockGetHostTimeClock(), &controlTimebase );
+//  
+//  self.sampleBufferLayer.controlTimebase = controlTimebase;
+//  CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
+//  CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
   
   [self.sampleBufferLayer setNeedsDisplay];
   

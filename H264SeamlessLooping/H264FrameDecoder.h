@@ -17,6 +17,14 @@
 
 @interface H264FrameDecoder : NSObject
 
+// Defaults to kCVPixelFormatType_32BGRA for implicit conversion to iOS native pixel format.
+// Other useful values are kCVPixelFormatType_420YpCbCr8BiPlanarVideorange and
+// kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+
+@property (nonatomic, assign) OSType pixelType;
+
+// When a CoreVideo pixel buffer is fully decoded, this property is set
+
 @property (nonatomic, assign) CVPixelBufferRef pixelBuffer;
 
 @property (nonatomic, copy) void (^pixelBufferBlock)(CVPixelBufferRef);

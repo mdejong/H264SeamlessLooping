@@ -65,10 +65,16 @@ void VideoToolboxCallback(
   VTDecompressionOutputCallbackRecord cb = { VideoToolboxCallback, (__bridge void *) self };
   CMVideoFormatDescriptionRef formatDesc = CMSampleBufferGetFormatDescription(cmSampleBuffer);
   
+  if (self.pixelType == 0) {
+    self.pixelType = kCVPixelFormatType_32BGRA;
+  }
+  
+  assert(formatDesc);
+  
   if (self->session == NULL) {
     NSDictionary* pixelBufferOptions = @{
                                          // Output pixel type required here since it would default to video range
-                                         (NSString*) kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange),
+                                         (NSString*) kCVPixelBufferPixelFormatTypeKey : @(self.pixelType),
                                          (NSString*) kCVPixelBufferOpenGLESCompatibilityKey : @YES,
                                          (NSString*) kCVPixelBufferIOSurfacePropertiesKey : @{}};
     
