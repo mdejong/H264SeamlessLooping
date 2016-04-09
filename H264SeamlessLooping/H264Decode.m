@@ -9,9 +9,12 @@
 #import "H264Decode.h"
 
 @import AVFoundation;
+@import UIKit;
+
 @import CoreVideo;
 @import CoreImage;
 @import CoreMedia;
+@import CoreGraphics;
 @import VideoToolbox;
 
 // Private API
@@ -437,6 +440,104 @@
   [context render:inputImage toCVPixelBuffer:bgraBuffer];
   
   return bgraBuffer;
+}
+
++ (CVPixelBufferRef) pixelBufferFromImage:(UIImage*)image
+                               renderSize:(CGSize)renderSize
+                                     dump:(BOOL)dump
+                                    asYUV:(BOOL)asYUV
+{
+  CGImageRef cgImage = image.CGImage;
+  
+  NSDictionary *options = @{
+                            (NSString *)kCVPixelBufferCGImageCompatibilityKey: @(YES),
+                            (NSString *)kCVPixelBufferCGBitmapContextCompatibilityKey: @(YES)
+                            };
+  
+  int renderWidth = (int) renderSize.width;
+  int renderHeight = (int) renderSize.height;
+  
+  int imageWidth = (int) CGImageGetWidth(cgImage);
+  int imageHeight = (int) CGImageGetHeight(cgImage);
+  
+  assert(imageWidth <= renderWidth);
+  assert(imageHeight <= renderHeight);
+  
+  // FIXME: instead of creating CoreVideo buffers over and over, just create 1 and
+  // then keep using it to do the render operations. Could also use a pool, but
+  // not really needed either.
+  
+  CVPixelBufferRef buffer = NULL;
+  CVPixelBufferCreate(kCFAllocatorDefault,
+                      renderWidth,
+                      renderHeight,
+                      kCVPixelFormatType_32BGRA,
+                      (__bridge CFDictionaryRef)options,
+                      &buffer);
+  
+  size_t bytesPerRow, extraBytes;
+  bytesPerRow = CVPixelBufferGetBytesPerRow(buffer);
+  extraBytes = bytesPerRow - renderWidth*sizeof(uint32_t);
+  NSLog(@"bytesPerRow %d extraBytes %d", (int)bytesPerRow, (int)extraBytes);
+  
+  CVPixelBufferLockBaseAddress(buffer, 0);
+  
+  void *baseAddress                  = CVPixelBufferGetBaseAddress(buffer);
+  
+  CGColorSpaceRef colorSpace  = CGColorSpaceCreateDeviceRGB();
+  
+  //CGColorSpaceRef colorSpace = CGImageGetColorSpace(image.CGImage);
+  
+  CGContextRef context;
+  
+  context = CGBitmapContextCreate(baseAddress,
+                                  renderWidth,
+                                  renderHeight,
+                                  8,
+                                  CVPixelBufferGetBytesPerRow(buffer),
+                                  colorSpace,
+                                  kCGBitmapByteOrder32Host | kCGImageAlphaNoneSkipFirst);
+  
+  // Render frame into top left corner at exact size
+  
+  CGContextClearRect(context, CGRectMake(0.0f, 0.0f, renderWidth, renderHeight));
+  
+  CGContextDrawImage(context, CGRectMake(0.0f, renderHeight - imageHeight, imageWidth, imageHeight), cgImage);
+  
+  //CGColorSpaceRelease(colorSpace);
+  CGContextRelease(context);
+  
+  CVPixelBufferUnlockBaseAddress(buffer, 0);
+  
+  // Convert from BGRA to YUV representation
+  
+  if (asYUV) {
+    CVPixelBufferRef yuv420Buffer = NULL;
+    CVReturn status = CVPixelBufferCreate(kCFAllocatorDefault,
+                                          renderWidth,
+                                          renderHeight,
+                                          [H264Decode getPixelType],
+                                          (__bridge CFDictionaryRef) @{
+                                                                       (__bridge NSString *)kCVPixelBufferIOSurfacePropertiesKey: @{},
+                                                                       (__bridge NSString *)kCVPixelFormatOpenGLESCompatibility : @(YES),
+                                                                       },
+                                          &yuv420Buffer);
+    
+    CIContext *context = [CIContext contextWithOptions:nil];
+    NSAssert(context, @"CIContext");
+    
+    CIImage *inImage = [CIImage imageWithCVPixelBuffer:buffer];
+    
+    if (status == kCVReturnSuccess) {
+      [context render:inImage toCVPixelBuffer:yuv420Buffer];
+    }
+    
+    CVPixelBufferRelease(buffer);
+    
+    return yuv420Buffer;
+  }
+  
+  return buffer;
 }
 
 // Manually convert a buffer of known kCVPixelFormatType_420YpCbCr8BiPlanarFullRange Y values

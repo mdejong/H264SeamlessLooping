@@ -8,6 +8,7 @@
 //  Util module that wraps .mov decoding logic to CoreVideo frames.
 
 @import Foundation;
+@import UIKit;
 @import CoreVideo;
 
 @interface H264Decode : NSObject
@@ -35,6 +36,13 @@
 + (BOOL) encodeCoreVideoFramesAsMOV:(NSString*)movPath
                              frames:(NSArray*)frames
                      completedBlock:(void(^)(void))completedBlock;
+
+// Render
+
++ (CVPixelBufferRef) pixelBufferFromImage:(UIImage*)image
+                               renderSize:(CGSize)renderSize
+                                     dump:(BOOL)dump
+                                    asYUV:(BOOL)asYUV;
 
 // Convert a buffer of CoreVideo in 4:2:0 full to BGRA, returns a new buffer
 

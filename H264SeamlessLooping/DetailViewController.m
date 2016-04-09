@@ -229,22 +229,93 @@
   for (int i = 0; i < numSampleBuffers; i++ ) @autoreleasepool {
     CVPixelBufferRef pixBuffer = (__bridge CVPixelBufferRef) coreVideoSamplesArr[i];
     
+    int width = (int) CVPixelBufferGetWidth(pixBuffer);
+    int height = (int) CVPixelBufferGetHeight(pixBuffer);
+    
+    // 1024 x 768
+    
+    CGSize renderSize = CGSizeMake(1024, 768);
+    int renderWidth = (int) renderSize.width;
+    int renderHeight = (int) renderSize.height;
+    
+    // Render CoreVideo to a NxN square so that square pixels do not distort
+    
+    NSLog(@"encode input dimensions %4d x %4d", width, height);
+    
+    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
+    
+    CGSize imgSize = CGSizeMake(width, height);
+    
+    UIGraphicsBeginImageContext(renderSize);
+    CGRect rect;
+    rect.origin = CGPointZero;
+    rect.size   = imgSize;
+    UIImage *remImage = [UIImage imageWithCIImage:ciImage];
+    [remImage drawInRect:rect];
+    UIImage *rerenderedInputImg = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    {
+    NSString *dumpFilename = [NSString stringWithFormat:@"rerendered_frame%d.png", i];
+    NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+    
+    NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
+    [pngData writeToFile:tmpPath atomically:TRUE];
+    
+    NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
+    }
+    
+    CVPixelBufferRef largerBuffer = [H264Decode pixelBufferFromImage:rerenderedInputImg
+                                                          renderSize:renderSize
+                                                                dump:@""
+                                                               asYUV:TRUE];
+    
+    CIImage *largerCiImage = [CIImage imageWithCVPixelBuffer:largerBuffer];
+    
+    UIGraphicsBeginImageContext(renderSize);
+    rect.origin = CGPointZero;
+    rect.size   = renderSize;
+    UIImage *remLargerImage = [UIImage imageWithCIImage:largerCiImage];
+    [remLargerImage drawInRect:rect];
+    UIImage *largerRenderedImg = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    {
+      NSString *dumpFilename = [NSString stringWithFormat:@"larger_frame%d.png", i];
+      NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+      
+      NSData *pngData = UIImagePNGRepresentation(largerRenderedImg);
+      [pngData writeToFile:tmpPath atomically:TRUE];
+      
+      NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)largerRenderedImg.size.width, (int)largerRenderedImg.size.height);
+    }
+    
+    int largerWidth = (int) CVPixelBufferGetWidth(largerBuffer);
+    int largerHeight = (int) CVPixelBufferGetHeight(largerBuffer);
+    
+    // Render CoreVideo to a NxN square so that square pixels do not distort
+    
+    NSLog(@"encode input dimensions %4d x %4d", largerWidth, largerHeight);
+    
     //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
 
     frameEncoder.sampleBufferBlock = ^(CMSampleBufferRef sampleBuffer) {
       [encodedH264Buffers addObject:(__bridge id)sampleBuffer];
       
-      int width = (int) CVPixelBufferGetWidth(pixBuffer);
-      int height = (int) CVPixelBufferGetHeight(pixBuffer);
-      
       int numBytes = (int) CMSampleBufferGetSampleSize(sampleBuffer, 0);
       
-      NSLog(@"encoded buffer at dims %4d x %4d as %6d H264 bytes", width, height, numBytes);
+      NSLog(@"encoded buffer as %6d H264 bytes", numBytes);
       
       totalEncodeNumBytes += numBytes;
     };
+
+    OSType bufferPixelType = CVPixelBufferGetPixelFormatType(largerBuffer);
     
-    [frameEncoder encodeH264CoreMediaFrame:pixBuffer];
+    assert(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange == bufferPixelType);
+    
+    [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
+
+    CVPixelBufferRelease(largerBuffer);
     
     while (frameEncoder.sampleBuffer == nil) {
       NSLog(@"sleep 0.10: at frame %d", i);
