@@ -353,7 +353,7 @@
   
   self.displayH264Timer = timer;
   
-  [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSDefaultRunLoopMode];
+  [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
 
   self.decodedBufferOffset = 0;
   self.decodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
