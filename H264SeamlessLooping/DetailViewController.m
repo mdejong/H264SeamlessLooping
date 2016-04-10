@@ -16,6 +16,11 @@
 #import "H264FrameEncoder.h"
 #import "H264FrameDecoder.h"
 
+void LoopTimebase(
+                  CFRunLoopTimerRef timer,
+                  void *context
+                  );
+
 static int dumpFramesImages = 0;
 
 @interface DetailViewController ()
@@ -27,6 +32,8 @@ static int dumpFramesImages = 0;
 @property (nonatomic, retain) AVSampleBufferDisplayLayer *sampleBufferLayer;
 
 @property (nonatomic, retain) NSTimer *displayH264Timer;
+
+@property (nonatomic, retain) NSTimer *restartTimer;
 
 @property (nonatomic, assign) BOOL isWaitingToPlay;
 
@@ -187,6 +194,9 @@ static int dumpFramesImages = 0;
   
   [self.displayH264Timer invalidate];
   self.displayH264Timer = nil;
+
+  [self.restartTimer invalidate];
+  self.restartTimer = nil;
 }
 
 - (void)didReceiveMemoryWarning {
@@ -436,6 +446,51 @@ static int dumpFramesImages = 0;
     self.sampleBufferLayer.controlTimebase = controlTimebase;
     CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
     CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
+    
+    // Setup a timer that will execute very close to the loop point
+    
+//    CFAbsoluteTime currentTime = CFAbsoluteTimeGetCurrent();
+//    CFAbsoluteTime fireTime = currentTime + (1.0/30 * numSampleBuffers);
+//
+//    NSLog(@"now  time %0.5f", currentTime);
+//    NSLog(@"fire time %0.5f", fireTime);
+//    NSLog(@"del  time %0.5f", fireTime-currentTime);
+    
+    /*
+    
+    CFAbsoluteTime interval = (1.0/30 * numSampleBuffers);
+    
+    CFRunLoopTimerCallBack timerCB = LoopTimebase;
+    
+    CFRunLoopTimerRef cfTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, 0, interval, 0, 0, timerCB, (void*)self.sampleBufferLayer.controlTimebase);
+    
+    */
+    
+    NSTimer *restartTimer = [NSTimer timerWithTimeInterval:(1.0/30 * numSampleBuffers)
+                                                    target:self
+                                                  selector:@selector(restartTimerCallback)
+                                                  userInfo:NULL
+                                                   repeats:TRUE];
+    self.restartTimer = restartTimer;
+    
+    [[NSRunLoop currentRunLoop] addTimer:restartTimer forMode:NSRunLoopCommonModes];
+    
+    /*
+    
+    CFRunLoopTimerRef cfTimer = (__bridge CFRunLoopTimerRef)restartTimer;
+    
+    CFRunLoopRef runloop = CFRunLoopGetCurrent();
+                                                     
+    OSStatus status = CMTimebaseAddTimer(self.sampleBufferLayer.controlTimebase, cfTimer, runloop);
+  
+     //  kCMTimebaseError_TimerIntervalTooShort = -12751
+    
+    if (status != noErr) {
+      NSLog(@"CMTimebaseAddTimer status not `noErr`: %d\n", (int)status);
+      assert(0);
+    }
+     
+     */
   }
   
   return;
@@ -594,6 +649,12 @@ static int dumpFramesImages = 0;
   }
   
   return;
+}
+
+- (void) restartTimerCallback
+{
+  CMTimebaseRef controlTimebase = self.sampleBufferLayer.controlTimebase;
+  CMTimebaseSetTime(controlTimebase, kCMTimeZero);
 }
 
 @end
