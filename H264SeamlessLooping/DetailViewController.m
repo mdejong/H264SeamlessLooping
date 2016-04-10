@@ -56,7 +56,6 @@ static int dumpFramesImages = 0;
 
 - (void) loadAVPlayerLayer
 {
-  [super viewDidLoad];
   UIView *view = self.view;
   NSString *resourceName = self.resourceName;
   NSString* movieFilePath = [[NSBundle mainBundle]
@@ -199,32 +198,46 @@ static int dumpFramesImages = 0;
 
 - (void) loadCoreMedia
 {
-  NSString *resourceName = self.resourceName;
-  NSString* movieFilePath = [[NSBundle mainBundle]
-                             pathForResource:resourceName ofType:nil];
-  NSAssert(movieFilePath, @"movieFilePath is nil");
+  self.title = @"Loading";
   
   // Setup AVSampleBufferDisplayLayer to display samples from memory
   
   self.sampleBufferLayer = [[AVSampleBufferDisplayLayer alloc] init];
   
   self.sampleBufferLayer.videoGravity = AVLayerVideoGravityResizeAspect;
-  
-  self.sampleBufferLayer.backgroundColor = [UIColor blackColor].CGColor;
+
+  self.sampleBufferLayer.backgroundColor = [UIColor redColor].CGColor;
   
   [self.view.layer addSublayer:self.sampleBufferLayer];
   
   [self resizePlayerToViewSize];
+
+  dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+    [self loadCoreMediaOnBackgroundThread];
+  });
+
+  return;
+}
+
+// Decompress CoreMedia sample data directly from a .mov container
+// without decompressing the samples.
+
+- (void) loadCoreMediaOnBackgroundThread
+{
+  NSString *resourceName = self.resourceName;
+  NSString* movieFilePath = [[NSBundle mainBundle]
+                             pathForResource:resourceName ofType:nil];
+  NSAssert(movieFilePath, @"movieFilePath is nil");
   
   // Decode H.264 encoded data from file and then reencode the image data
   // as keyframes that can be access randomly.
-
+  
   // FIXME: Using BGRA here, but should keep as YUV for max perf
   
   NSArray *coreVideoSamplesArr = [H264Decode decodeCoreVideoFramesFromMOV:movieFilePath asYUV:TRUE];
   
   H264FrameEncoder *frameEncoder = [[H264FrameEncoder alloc] init];
-
+  
   // Hard coded to 30 FPS
   
   frameEncoder.frameDuration = 1.0f/30;
@@ -257,7 +270,7 @@ static int dumpFramesImages = 0;
     // Render CoreVideo to a NxN square so that square pixels do not distort
     
     NSLog(@"encode input dimensions %4d x %4d", width, height);
-
+    
     CVPixelBufferRef largerBuffer;
     
     if (CGSizeEqualToSize(imgSize, renderSize)) {
@@ -324,7 +337,7 @@ static int dumpFramesImages = 0;
     NSLog(@"encode output dimensions %4d x %4d", largerWidth, largerHeight);
     
     //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
-
+    
     frameEncoder.sampleBufferBlock = ^(CMSampleBufferRef sampleBuffer) {
       [encodedH264Buffers addObject:(__bridge id)sampleBuffer];
       
@@ -334,33 +347,49 @@ static int dumpFramesImages = 0;
       
       totalEncodeNumBytes += numBytes;
     };
-
+    
     OSType bufferPixelType = CVPixelBufferGetPixelFormatType(largerBuffer);
     
     assert(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange == bufferPixelType);
     
     [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
-
+    
     [frameEncoder waitForFrame];
     
     CVPixelBufferRelease(largerBuffer);
   }
   
   [frameEncoder endSession];
-
-  NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
   
+  NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
+
+  self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
+  
+  // Create timer on main thread
+  
+  dispatch_sync(dispatch_get_main_queue(), ^{
+    [self setupTimer];
+  });
+  
+  return;
+}
+
+// Decompress CoreMedia sample data directly from a .mov container
+// without decompressing the samples.
+
+- (void) setupTimer
+{
   // FIXME: need to decode each frame and then save as a series of images so as to check
   // the quality of the encoded video.
   
   if ((0)) {
     // Display just the first encoded frame
     
-    CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[0];
+    CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.encodedBuffers[0];
     
     [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
   }
-    
+  
   if ((1)) {
     // Dead simple NSTimer based impl
     
@@ -375,8 +404,8 @@ static int dumpFramesImages = 0;
     [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
     
     self.encodedBufferOffset = 0;
-    self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
-  
+    self.encodedBuffers = [NSArray arrayWithArray:self.encodedBuffers];
+    
   }
   
   if ((0)) {
@@ -385,8 +414,10 @@ static int dumpFramesImages = 0;
     
     assert(self.sampleBufferLayer);
     
+    int numSampleBuffers = (int) self.encodedBuffers.count;
+    
     for (int i = 0; i < numSampleBuffers; i++ ) {
-      CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[i];
+      CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.encodedBuffers[i];
       
       [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
     }
@@ -400,6 +431,12 @@ static int dumpFramesImages = 0;
     
     [self.sampleBufferLayer setNeedsDisplay];
   }
+
+  // Reset the bg color
+  
+  self.sampleBufferLayer.backgroundColor = [UIColor blackColor].CGColor;
+  
+  self.title = @"Looping";
   
   return;
 }
