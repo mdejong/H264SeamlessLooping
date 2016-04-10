@@ -1,8 +1,9 @@
 //
 //  H264FrameDecoder.h
 //
-//  Created by Mo DeJong on 4/6/16.
-//  Copyright © 2016 HelpURock. All rights reserved.
+//  Created by Mo DeJong on 4/5/16.
+//
+//  See license.txt for BSD license terms.
 //
 //  This module makes it easy to decode a CoreVideo frame
 //  given an encoded CoreMedia frame.

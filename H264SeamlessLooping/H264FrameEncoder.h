@@ -1,8 +1,9 @@
 //
 //  H264FrameEncoder.h
 //
-//  Created by Mo DeJong on 4/6/16.
-//  Copyright © 2016 HelpURock. All rights reserved.
+//  Created by Mo DeJong on 4/5/16.
+//
+//  See license.txt for BSD license terms.
 //
 //  This module makes it easy to encode a single CoreVideo frame
 //  as H264 wrapped as a CoreMedia sample buffer object.

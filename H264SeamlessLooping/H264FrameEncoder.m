@@ -1,9 +1,9 @@
 //
 //  H264FrameEncoder.m
-//  MetalBufferProcessing
 //
-//  Created by Mo DeJong on 4/6/16.
-//  Copyright © 2016 HelpURock. All rights reserved.
+//  Created by Mo DeJong on 4/5/16.
+//
+//  See license.txt for BSD license terms.
 //
 
 #import "H264FrameEncoder.h"

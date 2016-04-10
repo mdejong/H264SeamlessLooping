@@ -2,8 +2,9 @@
 //  DetailViewController.m
 //  H264SeamlessLooping
 //
-//  Created by Mo DeJong on 4/8/16.
-//  Copyright © 2016 HelpURock. All rights reserved.
+//  Created by Mo DeJong on 4/5/16.
+//
+//  See license.txt for BSD license terms.
 //
 
 #import "DetailViewController.h"

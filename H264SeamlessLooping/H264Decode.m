@@ -1,9 +1,9 @@
 //
 //  H264Decode.m
-//  MetalBufferProcessing
 //
 //  Created by Mo DeJong on 4/5/16.
-//  Copyright © 2016 HelpURock. All rights reserved.
+//
+//  See license.txt for BSD license terms.
 //
 
 #import "H264Decode.h"

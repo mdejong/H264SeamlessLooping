@@ -1,9 +1,9 @@
 //
 //  H264Decode.h
-//  MetalBufferProcessing
 //
 //  Created by Mo DeJong on 4/5/16.
-//  Copyright © 2016 HelpURock. All rights reserved.
+//
+//  See license.txt for BSD license terms.
 //
 //  Util module that wraps .mov decoding logic to CoreVideo frames.
 
