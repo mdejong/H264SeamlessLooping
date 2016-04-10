@@ -17,6 +17,10 @@
 
 @interface H264FrameEncoder : NSObject
 
+// Approx frame duration, will default to 30 FPS by default
+
+@property (nonatomic, assign) float frameDuration;
+
 @property (nonatomic, assign) int frameOffset;
 
 @property (nonatomic, assign) CMSampleBufferRef sampleBuffer;

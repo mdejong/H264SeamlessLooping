@@ -95,6 +95,10 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
     [self configureSessionParameters];
     
     self.frameOffset = 0;
+
+    if (self.frameDuration == 0.0f || self.frameDuration < 0.0f) {
+      self.frameDuration = 1.0f/30;
+    }
   }
   
   assert(self->session);
@@ -102,7 +106,13 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   int offset = self.frameOffset;
   self.frameOffset += 1;
   
-  CMTime pts = CMTimeMake(600 * offset, 600);
+  // Determine the approx number of 1/600 samples correspond to the frame duration
+  
+  int nSamples = (int) round(self.frameDuration * offset * 600);
+  
+  printf("frame %3d maps to offset time %0.3f which is %5d in 1/600 intervals\n", offset, self.frameDuration * offset, nSamples);
+  
+  CMTime pts = CMTimeMake(nSamples, 600);
   CMTime dur = CMTimeMake(600, 600);
   
   self.sampleBuffer = NULL;

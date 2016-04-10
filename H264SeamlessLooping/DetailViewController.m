@@ -224,6 +224,10 @@ static int dumpFramesImages = 0;
   NSArray *coreVideoSamplesArr = [H264Decode decodeCoreVideoFramesFromMOV:movieFilePath asYUV:TRUE];
   
   H264FrameEncoder *frameEncoder = [[H264FrameEncoder alloc] init];
+
+  // Hard coded to 30 FPS
+  
+  frameEncoder.frameDuration = 1.0f/30;
   
   // Begin to decode frames
   
@@ -375,8 +379,9 @@ static int dumpFramesImages = 0;
   
   }
   
-  if ((1)) {
-    // Send frames to sampleBufferLayer and use embedded display times to control when to display
+  if ((0)) {
+    // Send frames to sampleBufferLayer and use embedded display times to control when to display.
+    // Note that this method is broken since it decodes all the H264 data so it is wasteful
     
     assert(self.sampleBufferLayer);
     
@@ -394,6 +399,43 @@ static int dumpFramesImages = 0;
     CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
     
     [self.sampleBufferLayer setNeedsDisplay];
+  }
+  
+  if ((1)) {
+    // This implementation will deliver frames via a timer, but it makes use of the timestamps
+    // in the CoreMedia encoded frames to determine when the layer will display the samples.
+    
+    NSTimer *timer = [NSTimer timerWithTimeInterval:1.0f/30
+                                             target:self
+                                           selector:@selector(deliverOneBuffer)
+                                           userInfo:NULL
+                                            repeats:TRUE];
+    
+    self.displayH264Timer = timer;
+    
+    [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
+    
+    self.encodedBufferOffset = 0;
+    self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
+    
+    [self deliverOneBuffer];
+
+    // Render first frame image right away
+    
+    [self.sampleBufferLayer setNeedsDisplay];
+    
+    // Deliver a second buffer without rendering
+    
+    [self deliverOneBuffer];
+    
+    // Timebase with loop
+    
+    CMTimebaseRef controlTimebase;
+    CMTimebaseCreateWithMasterClock(CFAllocatorGetDefault(), CMClockGetHostTimeClock(), &controlTimebase );
+    
+    self.sampleBufferLayer.controlTimebase = controlTimebase;
+    CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
+    CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
   }
   
   return;
@@ -428,6 +470,85 @@ static int dumpFramesImages = 0;
 //    [timer invalidate];
     
     // Keep looping
+    
+    self.encodedBufferOffset = 0;
+  }
+  
+  // Manually decode the frame data and emit the pixels as PNG
+  
+  if (dumpFramesImages) {
+    NSString *dumpFilename = [NSString stringWithFormat:@"dump_decoded_%0d.png", offset];
+    NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+    
+    H264FrameDecoder *frameDecoder = [[H264FrameDecoder alloc] init];
+    
+    frameDecoder.pixelType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+    
+    frameDecoder.pixelBufferBlock = ^(CVPixelBufferRef pixBuffer){
+      CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
+      
+      int width = (int) CVPixelBufferGetWidth(pixBuffer);
+      int height = (int) CVPixelBufferGetHeight(pixBuffer);
+      
+      CGSize imgSize = CGSizeMake(width, height);
+      
+      UIGraphicsBeginImageContext(imgSize);
+      CGRect rect;
+      rect.origin = CGPointZero;
+      rect.size   = imgSize;
+      UIImage *remImage = [UIImage imageWithCIImage:ciImage];
+      [remImage drawInRect:rect];
+      UIImage *outputImg = UIGraphicsGetImageFromCurrentImageContext();
+      UIGraphicsEndImageContext();
+      
+      NSData *pngData = UIImagePNGRepresentation(outputImg);
+      [pngData writeToFile:tmpPath atomically:TRUE];
+      
+      NSLog(@"wrote \"%@\"", tmpPath);
+    };
+    
+    [frameDecoder decodeH264CoreMediaFrame:sampleBufferRef];
+    
+    [frameDecoder waitForFrame];
+    
+    [frameDecoder endSession];
+  }
+  
+  return;
+}
+
+// A slightly better approach where sample buffers are encoded on a repeating timer
+// and
+
+- (void) deliverOneBuffer {
+  int offset = self.encodedBufferOffset;
+  
+  assert(self.encodedBuffers);
+  
+#if defined(DEBUG)
+  NSLog(@"deliverOneBuffer %d", offset);
+#endif // DEBUG
+  
+  if (self.sampleBufferLayer.readyForMoreMediaData == FALSE) {
+#if defined(DEBUG)
+    NSLog(@"deliverOneBuffer nop return because !readyForMoreMediaData for offset %d", offset);
+#endif // DEBUG
+    
+    return;
+  }
+  
+  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.encodedBuffers[offset];
+  
+  [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+  
+  self.encodedBufferOffset = self.encodedBufferOffset + 1;
+  
+  if (self.encodedBufferOffset >= self.encodedBuffers.count) {
+    //    [timer invalidate];
+    
+    // Keep looping
+    
+    CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
     
     self.encodedBufferOffset = 0;
   }
