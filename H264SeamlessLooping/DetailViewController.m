@@ -16,11 +16,6 @@
 #import "H264FrameEncoder.h"
 #import "H264FrameDecoder.h"
 
-void LoopTimebase(
-                  CFRunLoopTimerRef timer,
-                  void *context
-                  );
-
 static int dumpFramesImages = 0;
 
 @interface DetailViewController ()
@@ -32,8 +27,6 @@ static int dumpFramesImages = 0;
 @property (nonatomic, retain) AVSampleBufferDisplayLayer *sampleBufferLayer;
 
 @property (nonatomic, retain) NSTimer *displayH264Timer;
-
-@property (nonatomic, retain) NSTimer *restartTimer;
 
 @property (nonatomic, assign) BOOL isWaitingToPlay;
 
@@ -194,9 +187,6 @@ static int dumpFramesImages = 0;
   
   [self.displayH264Timer invalidate];
   self.displayH264Timer = nil;
-
-  [self.restartTimer invalidate];
-  self.restartTimer = nil;
 }
 
 - (void)didReceiveMemoryWarning {
@@ -371,7 +361,7 @@ static int dumpFramesImages = 0;
     [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
   }
     
-  if ((0)) {
+  if ((1)) {
     // Dead simple NSTimer based impl
     
     NSTimer *timer = [NSTimer timerWithTimeInterval:1.0/30
@@ -409,88 +399,6 @@ static int dumpFramesImages = 0;
     CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
     
     [self.sampleBufferLayer setNeedsDisplay];
-  }
-  
-  if ((1)) {
-    // This implementation will deliver frames via a timer, but it makes use of the timestamps
-    // in the CoreMedia encoded frames to determine when the layer will display the samples.
-    
-    NSTimer *timer = [NSTimer timerWithTimeInterval:1.0f/30
-                                             target:self
-                                           selector:@selector(deliverOneBuffer)
-                                           userInfo:NULL
-                                            repeats:TRUE];
-    
-    self.displayH264Timer = timer;
-    
-    [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
-    
-    self.encodedBufferOffset = 0;
-    self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
-    
-    [self deliverOneBuffer];
-
-    // Render first frame image right away
-    
-    [self.sampleBufferLayer setNeedsDisplay];
-    
-    // Deliver a second buffer without rendering
-    
-    [self deliverOneBuffer];
-    
-    // Timebase with loop
-    
-    CMTimebaseRef controlTimebase;
-    CMTimebaseCreateWithMasterClock(CFAllocatorGetDefault(), CMClockGetHostTimeClock(), &controlTimebase );
-    
-    self.sampleBufferLayer.controlTimebase = controlTimebase;
-    CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
-    CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
-    
-    // Setup a timer that will execute very close to the loop point
-    
-//    CFAbsoluteTime currentTime = CFAbsoluteTimeGetCurrent();
-//    CFAbsoluteTime fireTime = currentTime + (1.0/30 * numSampleBuffers);
-//
-//    NSLog(@"now  time %0.5f", currentTime);
-//    NSLog(@"fire time %0.5f", fireTime);
-//    NSLog(@"del  time %0.5f", fireTime-currentTime);
-    
-    /*
-    
-    CFAbsoluteTime interval = (1.0/30 * numSampleBuffers);
-    
-    CFRunLoopTimerCallBack timerCB = LoopTimebase;
-    
-    CFRunLoopTimerRef cfTimer = CFRunLoopTimerCreate(kCFAllocatorDefault, 0, interval, 0, 0, timerCB, (void*)self.sampleBufferLayer.controlTimebase);
-    
-    */
-    
-    NSTimer *restartTimer = [NSTimer timerWithTimeInterval:(1.0/30 * numSampleBuffers)
-                                                    target:self
-                                                  selector:@selector(restartTimerCallback)
-                                                  userInfo:NULL
-                                                   repeats:TRUE];
-    self.restartTimer = restartTimer;
-    
-    [[NSRunLoop currentRunLoop] addTimer:restartTimer forMode:NSRunLoopCommonModes];
-    
-    /*
-    
-    CFRunLoopTimerRef cfTimer = (__bridge CFRunLoopTimerRef)restartTimer;
-    
-    CFRunLoopRef runloop = CFRunLoopGetCurrent();
-                                                     
-    OSStatus status = CMTimebaseAddTimer(self.sampleBufferLayer.controlTimebase, cfTimer, runloop);
-  
-     //  kCMTimebaseError_TimerIntervalTooShort = -12751
-    
-    if (status != noErr) {
-      NSLog(@"CMTimebaseAddTimer status not `noErr`: %d\n", (int)status);
-      assert(0);
-    }
-     
-     */
   }
   
   return;
@@ -570,91 +478,6 @@ static int dumpFramesImages = 0;
   }
   
   return;
-}
-
-// A slightly better approach where sample buffers are encoded on a repeating timer
-// and
-
-- (void) deliverOneBuffer {
-  int offset = self.encodedBufferOffset;
-  
-  assert(self.encodedBuffers);
-  
-#if defined(DEBUG)
-  NSLog(@"deliverOneBuffer %d", offset);
-#endif // DEBUG
-  
-  if (self.sampleBufferLayer.readyForMoreMediaData == FALSE) {
-#if defined(DEBUG)
-    NSLog(@"deliverOneBuffer nop return because !readyForMoreMediaData for offset %d", offset);
-#endif // DEBUG
-    
-    return;
-  }
-  
-  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.encodedBuffers[offset];
-  
-  [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
-  
-  self.encodedBufferOffset = self.encodedBufferOffset + 1;
-  
-  if (self.encodedBufferOffset >= self.encodedBuffers.count) {
-    //    [timer invalidate];
-    
-    // Keep looping
-    
-    CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
-    
-    self.encodedBufferOffset = 0;
-  }
-  
-  // Manually decode the frame data and emit the pixels as PNG
-  
-  if (dumpFramesImages) {
-    NSString *dumpFilename = [NSString stringWithFormat:@"dump_decoded_%0d.png", offset];
-    NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-    
-    H264FrameDecoder *frameDecoder = [[H264FrameDecoder alloc] init];
-    
-    frameDecoder.pixelType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
-    
-    frameDecoder.pixelBufferBlock = ^(CVPixelBufferRef pixBuffer){
-      CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
-      
-      int width = (int) CVPixelBufferGetWidth(pixBuffer);
-      int height = (int) CVPixelBufferGetHeight(pixBuffer);
-      
-      CGSize imgSize = CGSizeMake(width, height);
-      
-      UIGraphicsBeginImageContext(imgSize);
-      CGRect rect;
-      rect.origin = CGPointZero;
-      rect.size   = imgSize;
-      UIImage *remImage = [UIImage imageWithCIImage:ciImage];
-      [remImage drawInRect:rect];
-      UIImage *outputImg = UIGraphicsGetImageFromCurrentImageContext();
-      UIGraphicsEndImageContext();
-      
-      NSData *pngData = UIImagePNGRepresentation(outputImg);
-      [pngData writeToFile:tmpPath atomically:TRUE];
-      
-      NSLog(@"wrote \"%@\"", tmpPath);
-    };
-    
-    [frameDecoder decodeH264CoreMediaFrame:sampleBufferRef];
-    
-    [frameDecoder waitForFrame];
-    
-    [frameDecoder endSession];
-  }
-  
-  return;
-}
-
-- (void) restartTimerCallback
-{
-  CMTimebaseRef controlTimebase = self.sampleBufferLayer.controlTimebase;
-  CMTimebaseSetTime(controlTimebase, kCMTimeZero);
 }
 
 @end
