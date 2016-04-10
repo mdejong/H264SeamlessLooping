@@ -30,8 +30,8 @@ static int dumpFramesImages = 0;
 
 @property (nonatomic, assign) BOOL isWaitingToPlay;
 
-@property (nonatomic, copy) NSArray *decodedBuffers;
-@property (nonatomic, assign) int decodedBufferOffset;
+@property (nonatomic, copy) NSArray *encodedBuffers;
+@property (nonatomic, assign) int encodedBufferOffset;
 
 @end
 
@@ -241,7 +241,10 @@ static int dumpFramesImages = 0;
     int width = (int) CVPixelBufferGetWidth(pixBuffer);
     int height = (int) CVPixelBufferGetHeight(pixBuffer);
     
-    // 1920 x 1080 is Full HD and the upper limit of H264 render size for iPad devices
+    CGSize imgSize = CGSizeMake(width, height);
+    
+    // 1920 x 1080 is Full HD and the upper limit of H264 render size for iPad devices.
+    // When the size of the input and the output exactly match, use input buffer (much faster)
     
     CGSize renderSize = CGSizeMake(1920, 1080);
     //int renderWidth = (int) renderSize.width;
@@ -250,48 +253,56 @@ static int dumpFramesImages = 0;
     // Render CoreVideo to a NxN square so that square pixels do not distort
     
     NSLog(@"encode input dimensions %4d x %4d", width, height);
+
+    CVPixelBufferRef largerBuffer;
     
-    CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
-    
-    CGSize imgSize = CGSizeMake(width, height);
-    
-    UIGraphicsBeginImageContext(renderSize);
-    CGRect rect;
-    rect.origin = CGPointZero;
-    rect.size   = imgSize;
-    UIImage *remImage = [UIImage imageWithCIImage:ciImage];
-    [remImage drawInRect:rect];
-    UIImage *rerenderedInputImg = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
-    if (dumpFramesImages)
-    {
-    NSString *dumpFilename = [NSString stringWithFormat:@"rerendered_frame%d.png", i];
-    NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-    
-    NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
-    [pngData writeToFile:tmpPath atomically:TRUE];
-    
-    NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
+    if (CGSizeEqualToSize(imgSize, renderSize)) {
+      // No resize needed
+      largerBuffer = pixBuffer;
+      
+      CVPixelBufferRetain(largerBuffer);
+    } else {
+      CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
+      
+      UIGraphicsBeginImageContext(renderSize);
+      CGRect rect;
+      rect.origin = CGPointZero;
+      rect.size   = imgSize;
+      UIImage *remImage = [UIImage imageWithCIImage:ciImage];
+      [remImage drawInRect:rect];
+      UIImage *rerenderedInputImg = UIGraphicsGetImageFromCurrentImageContext();
+      UIGraphicsEndImageContext();
+      
+      if (dumpFramesImages)
+      {
+        NSString *dumpFilename = [NSString stringWithFormat:@"rerendered_frame%d.png", i];
+        NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+        
+        NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
+        [pngData writeToFile:tmpPath atomically:TRUE];
+        
+        NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
+      }
+      
+      largerBuffer = [H264Decode pixelBufferFromImage:rerenderedInputImg
+                                           renderSize:renderSize
+                                                 dump:FALSE
+                                                asYUV:TRUE];
     }
     
-    CVPixelBufferRef largerBuffer = [H264Decode pixelBufferFromImage:rerenderedInputImg
-                                                          renderSize:renderSize
-                                                                dump:@""
-                                                               asYUV:TRUE];
-    
-    CIImage *largerCiImage = [CIImage imageWithCVPixelBuffer:largerBuffer];
-    
-    UIGraphicsBeginImageContext(renderSize);
-    rect.origin = CGPointZero;
-    rect.size   = renderSize;
-    UIImage *remLargerImage = [UIImage imageWithCIImage:largerCiImage];
-    [remLargerImage drawInRect:rect];
-    UIImage *largerRenderedImg = UIGraphicsGetImageFromCurrentImageContext();
-    UIGraphicsEndImageContext();
-    
     if (dumpFramesImages)
     {
+      CIImage *largerCiImage = [CIImage imageWithCVPixelBuffer:largerBuffer];
+      
+      UIGraphicsBeginImageContext(renderSize);
+      CGRect rect;
+      rect.origin = CGPointZero;
+      rect.size   = renderSize;
+      UIImage *remLargerImage = [UIImage imageWithCIImage:largerCiImage];
+      [remLargerImage drawInRect:rect];
+      UIImage *largerRenderedImg = UIGraphicsGetImageFromCurrentImageContext();
+      UIGraphicsEndImageContext();
+      
       NSString *dumpFilename = [NSString stringWithFormat:@"larger_frame%d.png", i];
       NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
       
@@ -306,7 +317,7 @@ static int dumpFramesImages = 0;
     
     // Render CoreVideo to a NxN square so that square pixels do not distort
     
-    NSLog(@"encode input dimensions %4d x %4d", largerWidth, largerHeight);
+    NSLog(@"encode output dimensions %4d x %4d", largerWidth, largerHeight);
     
     //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
 
@@ -327,11 +338,6 @@ static int dumpFramesImages = 0;
     [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
 
     [frameEncoder waitForFrame];
-    
-//    while (frameEncoder.sampleBuffer == nil) {
-//      NSLog(@"sleep 0.10: at frame %d", i);
-//      [NSThread sleepForTimeInterval:0.01];
-//    }
     
     CVPixelBufferRelease(largerBuffer);
   }
@@ -359,8 +365,8 @@ static int dumpFramesImages = 0;
   
   [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
 
-  self.decodedBufferOffset = 0;
-  self.decodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
+  self.encodedBufferOffset = 0;
+  self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
   
 //  NSMutableArray *encodedH264Buffers = [NSMutableArray array];
 
@@ -385,15 +391,15 @@ static int dumpFramesImages = 0;
 }
                     
 - (void) timerFired:(id)timer {
-  int offset = self.decodedBufferOffset;
+  int offset = self.encodedBufferOffset;
   
 #if defined(DEBUG)
   NSLog(@"timerFired %d", offset);
 #endif // DEBUG
   
-  assert(self.decodedBuffers);
+  assert(self.encodedBuffers);
   
-  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.decodedBuffers[offset];
+  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) self.encodedBuffers[offset];
   
   // Force display as soon as possible
   
@@ -405,14 +411,14 @@ static int dumpFramesImages = 0;
   
   [self.sampleBufferLayer setNeedsDisplay];
   
-  self.decodedBufferOffset = self.decodedBufferOffset + 1;
+  self.encodedBufferOffset = self.encodedBufferOffset + 1;
   
-  if (self.decodedBufferOffset >= self.decodedBuffers.count) {
+  if (self.encodedBufferOffset >= self.encodedBuffers.count) {
 //    [timer invalidate];
     
     // Keep looping
     
-    self.decodedBufferOffset = 0;
+    self.encodedBufferOffset = 0;
   }
   
   // Manually decode the frame data and emit the pixels as PNG
