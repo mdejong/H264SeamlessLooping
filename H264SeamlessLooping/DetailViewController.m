@@ -241,6 +241,10 @@ static int dumpFramesImages = 0;
   // Hard coded to 30 FPS
   
   frameEncoder.frameDuration = 1.0f/30;
+ 
+  // Larger than original but not too big
+  
+  frameEncoder.aveBitrate = 5000000;
   
   // Begin to decode frames
   

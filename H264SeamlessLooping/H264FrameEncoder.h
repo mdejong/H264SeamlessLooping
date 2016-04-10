@@ -21,6 +21,16 @@
 
 @property (nonatomic, assign) float frameDuration;
 
+
+// Bitrate provides a way to dial the encoded quality up or down
+
+// LOW   =  100000
+// MED   = 2000000
+// HIGH  = 5000000
+// CRAZY = 2000000000
+
+@property (nonatomic, assign) int aveBitrate;
+
 @property (nonatomic, assign) int frameOffset;
 
 @property (nonatomic, assign) CMSampleBufferRef sampleBuffer;

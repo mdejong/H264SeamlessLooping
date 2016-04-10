@@ -216,8 +216,17 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   //NSNumber *bitrate = @(1500000); // 3697
   //NSNumber *bitrate = @(2000000); // 4121
   
-  NSNumber *bitrate = @(2000000000);
+//  NSNumber *bitrate = @(5000000);
+//  NSNumber *bitrate = @(2000000000);
 
+  NSNumber *bitrate;
+  
+  if (self.aveBitrate == 0) {
+    bitrate = @(2000000); // Lowish but not super low quality
+  } else {
+    bitrate = @(self.aveBitrate);
+  }
+  
   status = VTSessionSetProperty(session,
                                 kVTCompressionPropertyKey_AverageBitRate,
                                 (__bridge CFNumberRef)bitrate);
