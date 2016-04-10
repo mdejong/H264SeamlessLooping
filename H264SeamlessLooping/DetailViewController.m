@@ -349,47 +349,58 @@ static int dumpFramesImages = 0;
   // FIXME: need to decode each frame and then save as a series of images so as to check
   // the quality of the encoded video.
   
-  // Display first encoded frame
+  if ((0)) {
+    // Display just the first encoded frame
+    
+    CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[0];
+    
+    [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+  }
+    
+  if ((0)) {
+    // Dead simple NSTimer based impl
+    
+    NSTimer *timer = [NSTimer timerWithTimeInterval:1.0/30
+                                             target:self
+                                           selector:@selector(timerFired:)
+                                           userInfo:NULL
+                                            repeats:TRUE];
+    
+    self.displayH264Timer = timer;
+    
+    [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
+    
+    self.encodedBufferOffset = 0;
+    self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
   
-//  CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[0];
+  }
   
-//  [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
-  
-  NSTimer *timer = [NSTimer timerWithTimeInterval:1.0/30
-                                           target:self
-                                         selector:@selector(timerFired:)
-                                         userInfo:NULL
-                                          repeats:TRUE];
-  
-  self.displayH264Timer = timer;
-  
-  [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
-
-  self.encodedBufferOffset = 0;
-  self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
-  
-//  NSMutableArray *encodedH264Buffers = [NSMutableArray array];
-
-  // Display all frames
-  
-//  for (int i = 0; i < numSampleBuffers; i++ ) {
-//    CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[i];
-//    
-//    [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
-//  }
-//
-//  CMTimebaseRef controlTimebase;
-//  CMTimebaseCreateWithMasterClock(CFAllocatorGetDefault(), CMClockGetHostTimeClock(), &controlTimebase );
-//  
-//  self.sampleBufferLayer.controlTimebase = controlTimebase;
-//  CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
-//  CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
-  
-//  [self.sampleBufferLayer setNeedsDisplay];
+  if ((1)) {
+    // Send frames to sampleBufferLayer and use embedded display times to control when to display
+    
+    assert(self.sampleBufferLayer);
+    
+    for (int i = 0; i < numSampleBuffers; i++ ) {
+      CMSampleBufferRef sampleBufferRef = (__bridge CMSampleBufferRef) encodedH264Buffers[i];
+      
+      [self.sampleBufferLayer enqueueSampleBuffer:sampleBufferRef];
+    }
+    
+    CMTimebaseRef controlTimebase;
+    CMTimebaseCreateWithMasterClock(CFAllocatorGetDefault(), CMClockGetHostTimeClock(), &controlTimebase );
+    
+    self.sampleBufferLayer.controlTimebase = controlTimebase;
+    CMTimebaseSetTime(self.sampleBufferLayer.controlTimebase, kCMTimeZero);
+    CMTimebaseSetRate(self.sampleBufferLayer.controlTimebase, 1.0);
+    
+    [self.sampleBufferLayer setNeedsDisplay];
+  }
   
   return;
 }
-                    
+
+// Really simplified impl of a repeating timer, just send the frame data to the sampleBufferLayer
+
 - (void) timerFired:(id)timer {
   int offset = self.encodedBufferOffset;
   
