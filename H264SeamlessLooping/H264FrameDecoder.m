@@ -1,6 +1,5 @@
 //
 //  H264FrameDecoder.m
-//  MetalBufferProcessing
 //
 //  Created by Mo DeJong on 4/5/16.
 //
@@ -147,6 +146,19 @@ void VideoToolboxCallback(
   
   if (status != noErr) {
     NSLog(@"VTDecompressionSessionWaitForAsynchronousFrames status not `noErr`: %d\n", (int)status);
+    return;
+  }
+}
+
+- (void) finishFrame
+{
+  OSStatus status;
+  
+  // Block until our callback has been called with the last frame.
+  status = VTDecompressionSessionFinishDelayedFrames(session);
+  
+  if (status != noErr) {
+    NSLog(@"VTDecompressionSessionFinishDelayedFrames status not `noErr`: %d\n", (int)status);
     return;
   }
 }

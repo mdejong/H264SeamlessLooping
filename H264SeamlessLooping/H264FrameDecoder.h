@@ -45,5 +45,9 @@
 // thread, or else!
 
 - (void) waitForFrame;
+
+// Flush any pending frames but without blocking
+
+- (void) finishFrame;
   
 @end
