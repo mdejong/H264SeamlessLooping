@@ -13,6 +13,7 @@
 @import AVKit;
 
 #import "H264Decode.h"
+#import "BGDecodeEncode.h"
 
 #import "H264FrameEncoder.h"
 #import "H264FrameDecoder.h"
@@ -233,140 +234,16 @@ static int dumpFramesImages = 0;
   // Decode H.264 encoded data from file and then reencode the image data
   // as keyframes that can be access randomly.
   
-  // FIXME: Using BGRA here, but should keep as YUV for max perf
+  float frameDuration = 1.0f/30;
+  int aveBitrate = 5000000;
   
-  NSArray *coreVideoSamplesArr = [H264Decode decodeCoreVideoFramesFromMOV:movieFilePath asYUV:TRUE];
+  CGSize renderSize = CGSizeMake(1920, 1080);
   
-  H264FrameEncoder *frameEncoder = [[H264FrameEncoder alloc] init];
-  
-  // Hard coded to 30 FPS
-  
-  frameEncoder.frameDuration = 1.0f/30;
- 
-  // Larger than original but not too big
-  
-  frameEncoder.aveBitrate = 5000000;
-  
-  // Begin to decode frames
-  
-  NSMutableArray *encodedH264Buffers = [NSMutableArray array];
-  
-  int numSampleBuffers = (int) coreVideoSamplesArr.count;
-  
-  __block int totalEncodeNumBytes = 0;
-  
-  for (int i = 0; i < numSampleBuffers; i++ ) @autoreleasepool {
-    // use VTCreateCGImageFromCVPixelBuffer() ?
-    
-    CVPixelBufferRef pixBuffer = (__bridge CVPixelBufferRef) coreVideoSamplesArr[i];
-    
-    int width = (int) CVPixelBufferGetWidth(pixBuffer);
-    int height = (int) CVPixelBufferGetHeight(pixBuffer);
-    
-    CGSize imgSize = CGSizeMake(width, height);
-    
-    // 1920 x 1080 is Full HD and the upper limit of H264 render size for iPad devices.
-    // When the size of the input and the output exactly match, use input buffer (much faster)
-    
-    CGSize renderSize = CGSizeMake(1920, 1080);
-    //int renderWidth = (int) renderSize.width;
-    //int renderHeight = (int) renderSize.height;
-    
-    // Render CoreVideo to a NxN square so that square pixels do not distort
-    
-    NSLog(@"encode input dimensions %4d x %4d", width, height);
-    
-    CVPixelBufferRef largerBuffer;
-    
-    if (CGSizeEqualToSize(imgSize, renderSize)) {
-      // No resize needed
-      largerBuffer = pixBuffer;
-      
-      CVPixelBufferRetain(largerBuffer);
-    } else {
-      CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
-      
-      UIGraphicsBeginImageContext(renderSize);
-      CGRect rect;
-      rect.origin = CGPointZero;
-      rect.size   = imgSize;
-      UIImage *remImage = [UIImage imageWithCIImage:ciImage];
-      [remImage drawInRect:rect];
-      UIImage *rerenderedInputImg = UIGraphicsGetImageFromCurrentImageContext();
-      UIGraphicsEndImageContext();
-      
-      if (dumpFramesImages)
-      {
-        NSString *dumpFilename = [NSString stringWithFormat:@"rerendered_frame%d.png", i];
-        NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-        
-        NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
-        [pngData writeToFile:tmpPath atomically:TRUE];
-        
-        NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
-      }
-      
-      largerBuffer = [H264Decode pixelBufferFromImage:rerenderedInputImg
-                                           renderSize:renderSize
-                                                 dump:FALSE
-                                                asYUV:TRUE];
-    }
-    
-    if (dumpFramesImages)
-    {
-      CIImage *largerCiImage = [CIImage imageWithCVPixelBuffer:largerBuffer];
-      
-      UIGraphicsBeginImageContext(renderSize);
-      CGRect rect;
-      rect.origin = CGPointZero;
-      rect.size   = renderSize;
-      UIImage *remLargerImage = [UIImage imageWithCIImage:largerCiImage];
-      [remLargerImage drawInRect:rect];
-      UIImage *largerRenderedImg = UIGraphicsGetImageFromCurrentImageContext();
-      UIGraphicsEndImageContext();
-      
-      NSString *dumpFilename = [NSString stringWithFormat:@"larger_frame%d.png", i];
-      NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-      
-      NSData *pngData = UIImagePNGRepresentation(largerRenderedImg);
-      [pngData writeToFile:tmpPath atomically:TRUE];
-      
-      NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)largerRenderedImg.size.width, (int)largerRenderedImg.size.height);
-    }
-    
-    int largerWidth = (int) CVPixelBufferGetWidth(largerBuffer);
-    int largerHeight = (int) CVPixelBufferGetHeight(largerBuffer);
-    
-    // Render CoreVideo to a NxN square so that square pixels do not distort
-    
-    NSLog(@"encode output dimensions %4d x %4d", largerWidth, largerHeight);
-    
-    //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
-    
-    frameEncoder.sampleBufferBlock = ^(CMSampleBufferRef sampleBuffer) {
-      [encodedH264Buffers addObject:(__bridge id)sampleBuffer];
-      
-      int numBytes = (int) CMSampleBufferGetSampleSize(sampleBuffer, 0);
-      
-      NSLog(@"encoded buffer as %6d H264 bytes", numBytes);
-      
-      totalEncodeNumBytes += numBytes;
-    };
-    
-    OSType bufferPixelType = CVPixelBufferGetPixelFormatType(largerBuffer);
-    
-    assert(kCVPixelFormatType_420YpCbCr8BiPlanarFullRange == bufferPixelType);
-    
-    [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
-    
-    [frameEncoder waitForFrame];
-    
-    CVPixelBufferRelease(largerBuffer);
-  }
-  
-  [frameEncoder endSession];
-  
-  NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
+  NSArray *encodedH264Buffers =
+  [BGDecodeEncode recompressKeyframesOnBackgroundThread:movieFilePath
+                                          frameDuration:frameDuration
+                                             renderSize:renderSize
+                                             aveBitrate:aveBitrate];
 
   self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
   

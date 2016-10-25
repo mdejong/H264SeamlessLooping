@@ -13,24 +13,6 @@
 
 @interface H264Decode : NSObject
 
-// Return the movie decode OS type, typically kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-// but could be kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange. In any case, this value
-// needs to match in both the encoder and decoder.
-
-+ (OSType) getPixelType;
-
-// Given a .mov generate an array of the frames as CoreVideo buffers.
-// This method returns the frames as BGRA pixels or YUV frames.
-
-+ (NSArray*) decodeCoreVideoFramesFromMOV:(NSString*)movPath
-                                    asYUV:(BOOL)asYUV;
-
-// Write a .mov that contains the CoreVideo frames in arr
-
-+ (BOOL) encodeCoreVideoFramesAsMOV:(NSString*)movPath
-                             frames:(NSArray*)frames
-                     completedBlock:(void(^)(void))completedBlock;
-
 // Render
 
 + (CVPixelBufferRef) pixelBufferFromImage:(UIImage*)image
