@@ -40,8 +40,9 @@ static const int dumpFramesImages = 0;
 
 + (OSType) getPixelType
 {
-  //  const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
-  const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
+  // Explicitly use video range color matrix
+  const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
+  //const OSType movieEncodePixelFormatType = kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
   return movieEncodePixelFormatType;
 }
 
