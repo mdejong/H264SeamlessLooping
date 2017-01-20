@@ -372,7 +372,7 @@ static const int dumpFramesImages = 0;
       UIGraphicsBeginImageContext(renderSize);
       CGRect rect;
       rect.origin = CGPointZero;
-      rect.size   = imgSize;
+      rect.size   = renderSize;
       UIImage *remImage = [UIImage imageWithCIImage:ciImage];
       [remImage drawInRect:rect];
       UIImage *rerenderedInputImg = UIGraphicsGetImageFromCurrentImageContext();
