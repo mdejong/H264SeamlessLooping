@@ -88,6 +88,12 @@ void VideoToolboxCallback(
     
     if (status != noErr) {
       NSLog(@"VTDecompressionSessionCreate status not `noErr`: %d\n", (int)status);
+      
+      if ((int)status == -12983) {
+        // A previous session was not closed down properly
+        NSLog(@"VTDecompressionSessionCreate error due to missing endSession?\n");
+      }
+      
       return FALSE;
     }
     
