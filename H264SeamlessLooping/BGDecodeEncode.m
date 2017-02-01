@@ -307,15 +307,18 @@ static const int dumpFramesImages = 0;
                              pathForResource:resTail ofType:nil];
   NSAssert(movieFilePath, @"movieFilePath is nil");
   
-  // Decode H.264 encoded data from file and then reencode the image data
-  // as keyframes that can be access randomly.
+  // Previously, asYUV was set to TRUE on device in an attempt to get the best
+  // performance by avoiding YUV->RGB->YUV conversion, but it seems to produce
+  // some slightly off colors in the reencoded video. Convert the initial movie
+  // data to RGB and then encode from RGB so that the defaults match whatever iOS
+  // is doing with 601 and 709 automatic detection.
+
+  BOOL asYUV = FALSE;
   
-  // FIXME: Using BGRA here, but should keep as YUV for max perf
-  
-  BOOL asYUV = TRUE;
-#if TARGET_IPHONE_SIMULATOR
-  asYUV = FALSE; // Force BGRA buffer when running in simulator
-#endif // TARGET_IPHONE_SIMULATOR
+//  BOOL asYUV = TRUE;
+//#if TARGET_IPHONE_SIMULATOR
+//  asYUV = FALSE; // Force BGRA buffer when running in simulator
+//#endif // TARGET_IPHONE_SIMULATOR
   
   // Setup frame encoder that will encode each frame
   
@@ -392,7 +395,7 @@ static const int dumpFramesImages = 0;
       largerBuffer = [self.class pixelBufferFromImage:rerenderedInputImg
                                            renderSize:renderSize
                                                  dump:FALSE
-                                                asYUV:TRUE];
+                                                asYUV:FALSE];
     }
     
     if (dumpFramesImages)
@@ -443,7 +446,11 @@ static const int dumpFramesImages = 0;
     // No-op
 #else
     OSType bufferPixelType = CVPixelBufferGetPixelFormatType(largerBuffer);
-    assert([self getPixelType] == bufferPixelType);
+    if (bufferPixelType == kCVPixelFormatType_32BGRA) {
+      // Already converted from YUV to BGRA
+    } else {
+      assert([self getPixelType] == bufferPixelType);
+    }
 #endif // TARGET_IPHONE_SIMULATOR
     
     [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
