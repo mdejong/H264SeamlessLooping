@@ -12,7 +12,6 @@
 @import AVFoundation;
 @import AVKit;
 
-#import "H264Decode.h"
 #import "BGDecodeEncode.h"
 
 #import "H264FrameEncoder.h"
