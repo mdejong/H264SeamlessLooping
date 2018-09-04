@@ -243,6 +243,13 @@ static int dumpFramesImages = 0;
                                           frameDuration:frameDuration
                                              renderSize:renderSize
                                              aveBitrate:aveBitrate];
+    
+  if (encodedH264Buffers == nil) {
+    // The H264 frame decode/encode process failed, this could happen
+    // if the app was put into the background while converting.
+      
+    return;
+  }
 
   self.encodedBuffers = [NSArray arrayWithArray:encodedH264Buffers];
   

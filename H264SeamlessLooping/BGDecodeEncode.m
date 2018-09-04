@@ -29,6 +29,10 @@ static const int dumpFramesImages = 0;
 
 //#define LOGGING 1
 
+// Block API typedef, returns a BOOL
+
+typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
+
 // Private API
 
 @interface BGDecodeEncode ()
@@ -151,7 +155,7 @@ static const int dumpFramesImages = 0;
 
 + (BOOL) decodeCoreVideoFramesFromMOV:(NSString*)movPath
                                 asYUV:(BOOL)asYUV
-                     encodeFrameBlock:(void (^)(int, CVPixelBufferRef))encodeFrameBlock
+                     encodeFrameBlock:(EncodeFrameBlockT)encodeFrameBlock
 {
   if ([[NSFileManager defaultManager] fileExistsAtPath:movPath] == FALSE) {
     return FALSE;
@@ -257,6 +261,8 @@ static const int dumpFramesImages = 0;
   
   // Read N frames as CoreVideo buffers and invoke callback
   
+  BOOL allFramesEncodedSuccessfully = TRUE;
+  
   // Read N frames, convert to BGRA pixels
   
   for ( int i = 0; 1; i++ ) @autoreleasepool {
@@ -265,24 +271,39 @@ static const int dumpFramesImages = 0;
     sampleBuffer = [aVAssetReaderOutput copyNextSampleBuffer];
     
     if (sampleBuffer == nil) {
+      // Another frame could not be loaded, this is the normal
+      // termination condition at the end of the file.
       break;
     }
     
     // Process BGRA data in buffer, crop and then read and combine
     
     CVImageBufferRef imageBufferRef = CMSampleBufferGetImageBuffer(sampleBuffer);
-    assert(imageBufferRef);
+    if (imageBufferRef == NULL) {
+      NSLog(@"CMSampleBufferGetImageBuffer() returned NULL at frame %d", i);
+      allFramesEncodedSuccessfully = FALSE;
+      break;
+    }
     
     CVPixelBufferRef pixBuffer = imageBufferRef;
     
-    encodeFrameBlock(i, pixBuffer);
+    BOOL worked = encodeFrameBlock(i, pixBuffer);
     
     CFRelease(sampleBuffer);
+    
+    if (!worked) {
+      allFramesEncodedSuccessfully = FALSE;
+      break;
+    }
   }
   
   [aVAssetReader cancelReading];
   
-  return TRUE;
+  if (allFramesEncodedSuccessfully == FALSE) {
+    return FALSE;
+  } else {
+    return TRUE;
+  }
 }
 
 // Decompress and then recompress each frame of H264 video as keyframes that
@@ -338,7 +359,7 @@ static const int dumpFramesImages = 0;
   
   __block int totalEncodeNumBytes = 0;
   
-  void (^encodeFrameBlock)(int frameOffset, CVPixelBufferRef pixBuffer) = ^(int frameOffset, CVPixelBufferRef pixBuffer) {
+  EncodeFrameBlockT encodeFrameBlock =  ^ BOOL (int frameOffset, CVPixelBufferRef pixBuffer) {
     int width = (int) CVPixelBufferGetWidth(pixBuffer);
     int height = (int) CVPixelBufferGetHeight(pixBuffer);
     
@@ -452,7 +473,7 @@ static const int dumpFramesImages = 0;
         NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
         [pngData writeToFile:tmpPath atomically:TRUE];
         
-        NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
+        //NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
       }
       
       largerBuffer = [self.class pixelBufferFromCGImage:resizedCgImgRef
@@ -482,7 +503,7 @@ static const int dumpFramesImages = 0;
       NSData *pngData = UIImagePNGRepresentation(largerRenderedImg);
       [pngData writeToFile:tmpPath atomically:TRUE];
       
-      NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)largerRenderedImg.size.width, (int)largerRenderedImg.size.height);
+//      NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)largerRenderedImg.size.width, (int)largerRenderedImg.size.height);
     }
     
     // Render CoreVideo to a NxN square so that square pixels do not distort
@@ -494,8 +515,18 @@ static const int dumpFramesImages = 0;
 #endif // LOGGING
     
     //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
+      
+    __block BOOL encodeFrameErrorCondition = FALSE;
     
     frameEncoder.sampleBufferBlock = ^(CMSampleBufferRef sampleBuffer) {
+      // If sampleBuffer is NULL, then the frame could not be encoded.
+      
+      if (sampleBuffer == NULL) {
+        //NSAssert(sampleBuffer, @"sampleBuffer argument to H264FrameEncoder.sampleBufferBlock is NULL");
+        encodeFrameErrorCondition = TRUE;
+        return;
+      }
+      
       [encodedH264Buffers addObject:(__bridge id)sampleBuffer];
       
       int numBytes = (int) CMSampleBufferGetSampleSize(sampleBuffer, 0);
@@ -518,11 +549,23 @@ static const int dumpFramesImages = 0;
     }
 #endif // TARGET_IPHONE_SIMULATOR
     
-    [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
-    
-    [frameEncoder waitForFrame];
+    BOOL worked = [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
+
+    if (worked) {
+      [frameEncoder waitForFrame];
+    }
     
     CVPixelBufferRelease(largerBuffer);
+    
+    if (encodeFrameErrorCondition == TRUE) {
+      return FALSE;
+    }
+      
+    if (worked == FALSE) {
+      return FALSE;
+    } else {
+      return TRUE;
+    }
   };
 
   // Encode each frame, one at a time, so that totaly memory used is minimized
@@ -531,9 +574,8 @@ static const int dumpFramesImages = 0;
                                                    asYUV:asYUV
                                         encodeFrameBlock:encodeFrameBlock];
 
-  if (!worked) {
-    NSLog(@"decodeCoreVideoFramesFromMOV failed");
-    assert(0);
+  if (worked == FALSE) {
+    NSLog(@"decodeCoreVideoFramesFromMOV failed for %@", movieFilePath);
   }
   
   [frameEncoder endSession];
@@ -542,7 +584,11 @@ static const int dumpFramesImages = 0;
   NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
 #endif // LOGGING
   
-  return [NSArray arrayWithArray:encodedH264Buffers];
+  if (worked == FALSE) {
+    return nil;
+  } else {
+    return [NSArray arrayWithArray:encodedH264Buffers];
+  }
 }
 
 @end
