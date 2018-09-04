@@ -19,6 +19,8 @@
 
 #import "H264FrameEncoder.h"
 
+#import "CGFrameBuffer.h"
+
 #if defined(DEBUG)
 static const int dumpFramesImages = 1;
 #else
@@ -46,13 +48,11 @@ static const int dumpFramesImages = 0;
   return movieEncodePixelFormatType;
 }
 
-+ (CVPixelBufferRef) pixelBufferFromImage:(UIImage*)image
-                               renderSize:(CGSize)renderSize
-                                     dump:(BOOL)dump
-                                    asYUV:(BOOL)asYUV
++ (CVPixelBufferRef) pixelBufferFromCGImage:(CGImageRef)cgImage
+                                 renderSize:(CGSize)renderSize
+                                       dump:(BOOL)dump
+                                      asYUV:(BOOL)asYUV
 {
-  CGImageRef cgImage = image.CGImage;
-  
   NSDictionary *options = @{
                             (NSString *)kCVPixelBufferCGImageCompatibilityKey: @(YES),
                             (NSString *)kCVPixelBufferCGBitmapContextCompatibilityKey: @(YES)
@@ -88,9 +88,8 @@ static const int dumpFramesImages = 0;
   
   void *baseAddress                  = CVPixelBufferGetBaseAddress(buffer);
   
-  CGColorSpaceRef colorSpace  = CGColorSpaceCreateDeviceRGB();
-  
   //CGColorSpaceRef colorSpace = CGImageGetColorSpace(image.CGImage);
+  CGColorSpaceRef colorSpace  = CGColorSpaceCreateDeviceRGB();
   
   CGContextRef context;
   
@@ -108,7 +107,7 @@ static const int dumpFramesImages = 0;
   
   CGContextDrawImage(context, CGRectMake(0.0f, renderHeight - imageHeight, imageWidth, imageHeight), cgImage);
   
-  //CGColorSpaceRelease(colorSpace);
+  CGColorSpaceRelease(colorSpace);
   CGContextRelease(context);
   
   CVPixelBufferUnlockBaseAddress(buffer, 0);
@@ -370,32 +369,98 @@ static const int dumpFramesImages = 0;
       
       CVPixelBufferRetain(largerBuffer);
     } else {
-      CIImage *ciImage = [CIImage imageWithCVPixelBuffer:pixBuffer];
+      int srcWidth = (int) CVPixelBufferGetWidth(pixBuffer);
+      int srcHeight = (int) CVPixelBufferGetHeight(pixBuffer);
+      int pixBufferNumBytes = (int) CVPixelBufferGetBytesPerRow(pixBuffer) * srcHeight;
       
-      UIGraphicsBeginImageContext(renderSize);
-      CGRect rect;
-      rect.origin = CGPointZero;
-      rect.size   = renderSize;
-      UIImage *remImage = [UIImage imageWithCIImage:ciImage];
-      [remImage drawInRect:rect];
-      UIImage *rerenderedInputImg = UIGraphicsGetImageFromCurrentImageContext();
-      UIGraphicsEndImageContext();
+      {
+        int status = CVPixelBufferLockBaseAddress(pixBuffer, 0);
+        assert(status == kCVReturnSuccess);
+      }
+      void *pixelsPtr = CVPixelBufferGetBaseAddress(pixBuffer);
+      assert(pixelsPtr);
+      
+      size_t bitsPerComponent = 8;
+      size_t numComponents = 4;
+      size_t bitsPerPixel = bitsPerComponent * numComponents;
+      size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixBuffer);
+      
+      CGBitmapInfo bitmapInfo = kCGBitmapByteOrder32Host | kCGImageAlphaNoneSkipFirst;
+      
+      CGDataProviderReleaseDataCallback releaseData = NULL;
+      
+      CGDataProviderRef dataProviderRef = CGDataProviderCreateWithData(
+                                                                       NULL,
+                                                                       pixelsPtr,
+                                                                       pixBufferNumBytes,
+                                                                       releaseData);
+
+      BOOL shouldInterpolate = TRUE;
+        
+      CGColorRenderingIntent renderIntent = kCGRenderingIntentDefault;
+        
+      CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB(); // iOS sRGB
+      
+      CGImageRef inImageRef = CGImageCreate(srcWidth, srcHeight, bitsPerComponent, bitsPerPixel, bytesPerRow,
+                                            colorSpace, bitmapInfo, dataProviderRef, NULL,
+                                            shouldInterpolate, renderIntent);
+
+      CGDataProviderRelease(dataProviderRef);
+      
+      CGColorSpaceRelease(colorSpace);
+
+      assert(inImageRef);
+      
+      // Dump original before resize action
+      
+      if (dumpFramesImages)
+      {
+        NSString *dumpFilename = [NSString stringWithFormat:@"%@_orig_F%d.png", resNoSuffix, frameOffset];
+        NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+        
+        UIImage *rerenderedInputImg = [UIImage imageWithCGImage:inImageRef];
+        NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
+        [pngData writeToFile:tmpPath atomically:TRUE];
+        
+        //NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
+      }
+      
+      // Output image as CoreGraphics buffer
+      
+      CGFrameBuffer *cgFramebuffer = [CGFrameBuffer cGFrameBufferWithBppDimensions:24 width:renderSize.width height:renderSize.height];
+      
+      // Render the src image into a large framebuffer
+      
+      BOOL worked = [cgFramebuffer renderCGImage:inImageRef];
+      assert(worked);
+      
+      CGImageRelease(inImageRef);
+      
+      {
+        int status = CVPixelBufferUnlockBaseAddress(pixBuffer, 0);
+        assert(status == kCVReturnSuccess);
+      }
+      
+      CGImageRef resizedCgImgRef = [cgFramebuffer createCGImageRef];
       
       if (dumpFramesImages)
       {
         NSString *dumpFilename = [NSString stringWithFormat:@"%@_resized_F%d.png", resNoSuffix, frameOffset];
         NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
         
+        UIImage *rerenderedInputImg = [UIImage imageWithCGImage:resizedCgImgRef];
         NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
         [pngData writeToFile:tmpPath atomically:TRUE];
         
         NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
       }
       
-      largerBuffer = [self.class pixelBufferFromImage:rerenderedInputImg
+      largerBuffer = [self.class pixelBufferFromCGImage:resizedCgImgRef
                                            renderSize:renderSize
                                                  dump:FALSE
                                                 asYUV:FALSE];
+      
+      CGImageRelease(resizedCgImgRef);
     }
     
     if (dumpFramesImages)
