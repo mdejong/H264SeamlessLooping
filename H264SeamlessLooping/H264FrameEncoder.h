@@ -38,8 +38,10 @@
 
 @property (nonatomic, copy) void (^sampleBufferBlock)(CMSampleBufferRef);
 
-// Invoke to encode the pixel buffer, the result is assigned to
-// self.sampleBuffer via async callback.
+// Encode an uncompressed CoreVideo pixel buffer as a compressed CoreMedia buffer.
+// The input is BGRA pixels and the output is a CoreMedia H.264 frame as a data buffer.
+// The output CoreMedia buffer is assigned to self.sampleBuffer via async callback.
+// Returns TRUE on success or FALSE if a compression session could not be created.
 
 - (BOOL) encodeH264CoreMediaFrame:(CVPixelBufferRef)cvPixelBuffer;
 

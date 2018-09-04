@@ -42,6 +42,7 @@ void VideoToolboxCallback(
 - (void) endSession
 {
   if (self->session != NULL) {
+    VTDecompressionSessionWaitForAsynchronousFrames(self->session);
     VTDecompressionSessionInvalidate(self->session);
     CFRelease(self->session);
     self->session = NULL;

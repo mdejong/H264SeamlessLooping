@@ -40,6 +40,7 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
 - (void) endSession
 {
   if (self->session != NULL) {
+    VTCompressionSessionCompleteFrames(self->session, kCMTimeIndefinite);
     VTCompressionSessionInvalidate(self->session);
     CFRelease(self->session);
     self->session = NULL;
@@ -57,7 +58,10 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   }
 }
 
-// Encode an uncompressed CoreVideo pixel buffer as a compressed CoreMedia buffer
+// Encode an uncompressed CoreVideo pixel buffer as a compressed CoreMedia buffer.
+// The input is BGRA pixels and the output is a CoreMedia H.264 frame as a data buffer.
+// The output CoreMedia buffer is assigned to self.sampleBuffer via async callback.
+// Returns TRUE on success or FALSE if a compression session could not be created.
 
 - (BOOL) encodeH264CoreMediaFrame:(CVPixelBufferRef)cvPixelBuffer {
   OSStatus status;
@@ -110,7 +114,7 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   int nSamples = (int) round(self.frameDuration * offset * 600);
   
-  printf("frame %3d maps to offset time %0.3f which is %5d in 1/600 intervals\n", offset, self.frameDuration * offset, nSamples);
+//  printf("frame %3d maps to offset time %0.3f which is %5d in 1/600 intervals\n", offset, self.frameDuration * offset, nSamples);
   
   CMTime pts = CMTimeMake(nSamples, 600);
   CMTime dur = CMTimeMake(600, 600);
@@ -119,7 +123,10 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   status = VTCompressionSessionEncodeFrame(session, cvPixelBuffer, pts, dur, NULL, NULL, NULL);
   
-  if (status != noErr) {
+  if (status == kVTInvalidSessionErr) {
+    NSLog(@"VTCompressionSessionEncodeFrame status kVTInvalidSessionErr\n");
+    return FALSE;
+  } else if (status != noErr) {
     NSLog(@"VTCompressionSessionEncodeFrame status not `noErr`: %d\n", (int)status);
     return FALSE;
   }
@@ -160,6 +167,12 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   CMTime pts = CMTimeMake(600 * offset, 600);
   
   status = VTCompressionSessionCompleteFrames(session, pts);
+    
+  if (status == kVTInvalidSessionErr) {
+    NSLog(@"VTCompressionSessionCompleteFrames status kVTInvalidSessionErr\n");
+  } else if (status != noErr) {
+    NSLog(@"VTCompressionSessionCompleteFrames status not `noErr`: %d\n", (int)status);
+  }
 }
 
 - (void) configureSessionParameters
