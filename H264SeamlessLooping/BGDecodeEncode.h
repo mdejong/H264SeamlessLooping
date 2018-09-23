@@ -24,6 +24,14 @@
 // If an error is encountered during the encode/decode process then nil
 // is returned (this can happen when app is put into the background)
 
++ (BOOL) recompressKeyframes:(NSString*)resourceName
+               frameDuration:(float)frameDuration
+                  renderSize:(CGSize)renderSize
+                  aveBitrate:(int)aveBitrate
+                      frames:(NSMutableArray*)frames;
+
+// Previous API compat
+
 + (NSArray*) recompressKeyframesOnBackgroundThread:(NSString*)resourceName
                                      frameDuration:(float)frameDuration
                                         renderSize:(CGSize)renderSize

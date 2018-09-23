@@ -27,11 +27,8 @@
 static const int dumpFramesImages = 0;
 //#endif // DEBUG
 
-//#define LOGGING 1
-
-// Block API typedef, returns a BOOL
-
-typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
+#define LOGGING 1
+//#define LOGGING_EVERY_FRAME 1
 
 // Private API
 
@@ -147,21 +144,239 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   return buffer;
 }
 
-// Decompress CoreMedia sample data directly from a .mov container
-// without decompressing the samples.
+// This method accepts a pixel buffer to be encoded, along with
+// an encoder object and an output array that the encoded
+// frame will be appened to.
+
++ (BOOL) encodeAndAppendToArray:(CVPixelBufferRef)pixBuffer
+                    frameOffset:(int)frameOffset
+                     renderSize:(CGSize)renderSize
+                   frameEncoder:(H264FrameEncoder *)frameEncoder
+             encodedH264Buffers:(NSMutableArray*)encodedH264Buffers
+                    resNoSuffix:(NSString*)resNoSuffix
+{
+  int width = (int) CVPixelBufferGetWidth(pixBuffer);
+  int height = (int) CVPixelBufferGetHeight(pixBuffer);
+  
+  CGSize imgSize = CGSizeMake(width, height);
+  
+  // 1920 x 1080 is Full HD and the upper limit of H264 render size for iPad devices.
+  // When the size of the input and the output exactly match, use input buffer (much faster)
+  
+  // 2048 x 1536 seems to work just fine on iPad Retina
+  
+  //CGSize renderSize = CGSizeMake(1920, 1080);
+  //CGSize renderSize = CGSizeMake(2048, 1536);
+  
+  //int renderWidth = (int) renderSize.width;
+  //int renderHeight = (int) renderSize.height;
+  
+  // Render CoreVideo to a NxN square so that square pixels do not distort
+  
+#if defined(LOGGING_EVERY_FRAME)
+  NSLog(@"encode input dimensions %4d x %4d", width, height);
+#endif // LOGGING_EVERY_FRAME
+  
+  CVPixelBufferRef largerBuffer;
+  
+  if (CGSizeEqualToSize(imgSize, renderSize)) {
+    // No resize needed
+    largerBuffer = pixBuffer;
+    
+    CVPixelBufferRetain(largerBuffer);
+  } else {
+    int srcWidth = (int) CVPixelBufferGetWidth(pixBuffer);
+    int srcHeight = (int) CVPixelBufferGetHeight(pixBuffer);
+    int pixBufferNumBytes = (int) CVPixelBufferGetBytesPerRow(pixBuffer) * srcHeight;
+    
+    {
+      int status = CVPixelBufferLockBaseAddress(pixBuffer, 0);
+      assert(status == kCVReturnSuccess);
+    }
+    void *pixelsPtr = CVPixelBufferGetBaseAddress(pixBuffer);
+    assert(pixelsPtr);
+    
+    size_t bitsPerComponent = 8;
+    size_t numComponents = 4;
+    size_t bitsPerPixel = bitsPerComponent * numComponents;
+    size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixBuffer);
+    
+    CGBitmapInfo bitmapInfo = kCGBitmapByteOrder32Host | kCGImageAlphaNoneSkipFirst;
+    
+    CGDataProviderReleaseDataCallback releaseData = NULL;
+    
+    CGDataProviderRef dataProviderRef = CGDataProviderCreateWithData(
+                                                                     NULL,
+                                                                     pixelsPtr,
+                                                                     pixBufferNumBytes,
+                                                                     releaseData);
+    
+    BOOL shouldInterpolate = TRUE;
+    
+    CGColorRenderingIntent renderIntent = kCGRenderingIntentDefault;
+    
+    CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB(); // iOS sRGB
+    
+    CGImageRef inImageRef = CGImageCreate(srcWidth, srcHeight, bitsPerComponent, bitsPerPixel, bytesPerRow,
+                                          colorSpace, bitmapInfo, dataProviderRef, NULL,
+                                          shouldInterpolate, renderIntent);
+    
+    CGDataProviderRelease(dataProviderRef);
+    
+    CGColorSpaceRelease(colorSpace);
+    
+    assert(inImageRef);
+    
+    // Dump original before resize action
+    
+    if (dumpFramesImages)
+    {
+      NSString *dumpFilename = [NSString stringWithFormat:@"%@_orig_F%d.png", resNoSuffix, frameOffset];
+      NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+      
+      UIImage *rerenderedInputImg = [UIImage imageWithCGImage:inImageRef];
+      NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
+      [pngData writeToFile:tmpPath atomically:TRUE];
+      
+      NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
+    }
+    
+    // Output image as CoreGraphics buffer
+    
+    CGFrameBuffer *cgFramebuffer = [CGFrameBuffer cGFrameBufferWithBppDimensions:24 width:renderSize.width height:renderSize.height];
+    
+    // Render the src image into a large framebuffer
+    
+    BOOL worked = [cgFramebuffer renderCGImage:inImageRef];
+    assert(worked);
+    
+    CGImageRelease(inImageRef);
+    
+    {
+      int status = CVPixelBufferUnlockBaseAddress(pixBuffer, 0);
+      assert(status == kCVReturnSuccess);
+    }
+    
+    CGImageRef resizedCgImgRef = [cgFramebuffer createCGImageRef];
+    
+    if (dumpFramesImages)
+    {
+      NSString *dumpFilename = [NSString stringWithFormat:@"%@_resized_F%d.png", resNoSuffix, frameOffset];
+      NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+      
+      UIImage *rerenderedInputImg = [UIImage imageWithCGImage:resizedCgImgRef];
+      NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
+      [pngData writeToFile:tmpPath atomically:TRUE];
+      
+      NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
+    }
+    
+    largerBuffer = [self.class pixelBufferFromCGImage:resizedCgImgRef
+                                           renderSize:renderSize
+                                                 dump:FALSE
+                                                asYUV:FALSE];
+    
+    CGImageRelease(resizedCgImgRef);
+  }
+  
+  if (dumpFramesImages)
+  {
+    CIImage *largerCiImage = [CIImage imageWithCVPixelBuffer:largerBuffer];
+    
+    UIGraphicsBeginImageContext(renderSize);
+    CGRect rect;
+    rect.origin = CGPointZero;
+    rect.size   = renderSize;
+    UIImage *remLargerImage = [UIImage imageWithCIImage:largerCiImage];
+    [remLargerImage drawInRect:rect];
+    UIImage *largerRenderedImg = UIGraphicsGetImageFromCurrentImageContext();
+    UIGraphicsEndImageContext();
+    
+    NSString *dumpFilename = [NSString stringWithFormat:@"%@_F%d.png", resNoSuffix, frameOffset];
+    NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
+    
+    NSData *pngData = UIImagePNGRepresentation(largerRenderedImg);
+    [pngData writeToFile:tmpPath atomically:TRUE];
+    
+    NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)largerRenderedImg.size.width, (int)largerRenderedImg.size.height);
+  }
+  
+  // Render CoreVideo to a NxN square so that square pixels do not distort
+  
+#if defined(LOGGING_EVERY_FRAME)
+  int largerWidth = (int) CVPixelBufferGetWidth(largerBuffer);
+  int largerHeight = (int) CVPixelBufferGetHeight(largerBuffer);
+  NSLog(@"encode output dimensions %4d x %4d", largerWidth, largerHeight);
+#endif // LOGGING_EVERY_FRAME
+  
+  //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
+  
+  __block BOOL encodeFrameErrorCondition = FALSE;
+  
+  frameEncoder.sampleBufferBlock = ^(CMSampleBufferRef sampleBuffer) {
+    // If sampleBuffer is NULL, then the frame could not be encoded.
+    
+    if (sampleBuffer == NULL) {
+      //NSAssert(sampleBuffer, @"sampleBuffer argument to H264FrameEncoder.sampleBufferBlock is NULL");
+      encodeFrameErrorCondition = TRUE;
+      return;
+    }
+    
+    [encodedH264Buffers addObject:(__bridge id)sampleBuffer];
+    
+#if defined(LOGGING_EVERY_FRAME)
+    int numBytes = (int) CMSampleBufferGetSampleSize(sampleBuffer, 0);
+    NSLog(@"encoded buffer as %6d H264 bytes", numBytes);
+#endif // LOGGING_EVERY_FRAME
+  };
+  
+#if TARGET_IPHONE_SIMULATOR
+  // No-op
+#else
+  OSType bufferPixelType = CVPixelBufferGetPixelFormatType(largerBuffer);
+  if (bufferPixelType == kCVPixelFormatType_32BGRA) {
+    // Already converted from YUV to BGRA
+  } else {
+    assert([self getPixelType] == bufferPixelType);
+  }
+#endif // TARGET_IPHONE_SIMULATOR
+  
+  BOOL worked = [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
+  
+  if (worked) {
+    [frameEncoder waitForFrame];
+  }
+  
+  CVPixelBufferRelease(largerBuffer);
+  
+  // Null out block ref just to make sure
+  frameEncoder.sampleBufferBlock = nil;
+  
+  if (encodeFrameErrorCondition == TRUE) {
+    return FALSE;
+  }
+  
+  if (worked == FALSE) {
+    return FALSE;
+  } else {
+    return TRUE;
+  }
+};
 
 // Given a .mov generate an array of the frames as CoreVideo buffers.
 // This method returns the frames as BGRA pixels or YUV frames.
 
 + (BOOL) decodeCoreVideoFramesFromMOV:(NSString*)movPath
                                 asYUV:(BOOL)asYUV
-                     encodeFrameBlock:(EncodeFrameBlockT)encodeFrameBlock
+                           renderSize:(CGSize)renderSize
+                         frameEncoder:(H264FrameEncoder*)frameEncoder
+                   encodedH264Buffers:(NSMutableArray*)encodedH264Buffers
 {
   if ([[NSFileManager defaultManager] fileExistsAtPath:movPath] == FALSE) {
     return FALSE;
   }
   
-  assert(encodeFrameBlock != nil);
+  NSString *resNoSuffix = [[movPath lastPathComponent] stringByDeletingPathExtension];
   
   // Read H.264 frames and convert from YUV to BGRA on the read
   
@@ -207,25 +422,25 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   
   AVAssetTrack *videoTrack = [videoTracks objectAtIndex:0];
   
-#if defined(LOGGING)
+#if defined(LOGGING_EVERY_FRAME)
   NSArray *availableMetadataFormats = videoTrack.availableMetadataFormats;
   NSLog(@"availableMetadataFormats %@", availableMetadataFormats);
-#endif // LOGGING
+#endif // LOGGING_EVERY_FRAME
   
   NSAssert(videoTrack.isSelfContained, @"isSelfContained");
   
-#if defined(LOGGING)
+#if defined(LOGGING_EVERY_FRAME)
   CGSize uncroppedSize = videoTrack.naturalSize;
   NSLog(@"video track naturalSize w x h : %d x %d", (int)uncroppedSize.width, (int)uncroppedSize.height);
-#endif // LOGGING
+#endif // LOGGING_EVERY_FRAME
   
   // Track length in second, should map directly to number of frames
   
-#if defined(LOGGING)
+#if defined(LOGGING_EVERY_FRAME)
   CMTimeRange timeRange = videoTrack.timeRange;
   float duration = (float)CMTimeGetSeconds(timeRange.duration);
   NSLog(@"video track time duration %0.3f", duration);
-#endif // LOGGING
+#endif // LOGGING_EVERY_FRAME
   
   // Don't know how many frames at this point
   
@@ -285,7 +500,12 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
     
     CVPixelBufferRef pixBuffer = imageBufferRef;
     
-    BOOL worked = encodeFrameBlock(i, pixBuffer);
+    BOOL worked = [self encodeAndAppendToArray:pixBuffer
+                                   frameOffset:i
+                                    renderSize:renderSize
+                                  frameEncoder:frameEncoder
+                            encodedH264Buffers:encodedH264Buffers
+                                   resNoSuffix:resNoSuffix];
     
     CFRelease(sampleBuffer);
     
@@ -304,20 +524,14 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   }
 }
 
-// Decompress and then recompress each frame of H264 video as keyframes that
-// can be rendered directly without holding a stream decode resource open.
-// If an error is encountered during the encode/decode process then nil
-// is returned (this can happen when app is put into the background)
+// Previous API compat
 
 + (NSArray*) recompressKeyframesOnBackgroundThread:(NSString*)resourceName
                                      frameDuration:(float)frameDuration
                                         renderSize:(CGSize)renderSize
                                         aveBitrate:(int)aveBitrate
 {
-  //__block
   NSMutableArray *encodedH264Buffers = [NSMutableArray array];
-  
-  //dispatch_sync(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
   
   @autoreleasepool {
     [self recompressKeyframesOnBackgroundThreadImpl:resourceName
@@ -326,10 +540,6 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
                                          aveBitrate:aveBitrate
                                  encodedH264Buffers:encodedH264Buffers];
   }
-
-  //});
-  
-  //[NSThread sleepForTimeInterval:0.1];
   
   NSArray *retArr;
   
@@ -342,6 +552,42 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   encodedH264Buffers = nil;
   
   return retArr;
+}
+
+// Decompress and then recompress each frame of H264 video as keyframes that
+// can be rendered directly without holding a stream decode resource open.
+// If an error is encountered during the encode/decode process then nil
+// is returned (this can happen when app is put into the background)
+
++ (BOOL) recompressKeyframes:(NSString*)resourceName
+               frameDuration:(float)frameDuration
+                  renderSize:(CGSize)renderSize
+                  aveBitrate:(int)aveBitrate
+                      frames:(NSMutableArray*)frames
+{
+  //dispatch_sync(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+  
+  @autoreleasepool {
+    [self recompressKeyframesOnBackgroundThreadImpl:resourceName
+                                      frameDuration:frameDuration
+                                         renderSize:renderSize
+                                         aveBitrate:aveBitrate
+                                 encodedH264Buffers:frames];
+  }
+
+  //});
+  
+  //[NSThread sleepForTimeInterval:0.1];
+  
+  BOOL worked;
+  
+  if (frames.count == 0) {
+    worked = FALSE;
+  } else {
+    worked = TRUE;
+  }
+  
+  return worked;
 }
 
 // This implementation is meant to be called from inside an autorelease block
@@ -364,12 +610,12 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   NSLog(@"recompressKeyframesOnBackgroundThread");
 #endif // LOGGING
   
+  // This operation cannot be executed on the main thread!
   NSAssert([NSThread isMainThread] == FALSE, @"isMainThread");
 
   [encodedH264Buffers removeAllObjects];
   
   NSString *resTail = [resourceName lastPathComponent];
-  NSString *resNoSuffix = [[resourceName lastPathComponent] stringByDeletingPathExtension];
   
   NSString* movieFilePath = [[NSBundle mainBundle]
                              pathForResource:resTail ofType:nil];
@@ -401,236 +647,33 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
 //  frameEncoder.aveBitrate = 5000000;
   frameEncoder.aveBitrate = aveBitrate;
   
-  // Begin to decode frames
-  
-  __block int totalEncodeNumBytes = 0;
-  
-  EncodeFrameBlockT encodeFrameBlock =  ^ BOOL (int frameOffset, CVPixelBufferRef pixBuffer) {
-    int width = (int) CVPixelBufferGetWidth(pixBuffer);
-    int height = (int) CVPixelBufferGetHeight(pixBuffer);
-    
-    CGSize imgSize = CGSizeMake(width, height);
-    
-    // 1920 x 1080 is Full HD and the upper limit of H264 render size for iPad devices.
-    // When the size of the input and the output exactly match, use input buffer (much faster)
-    
-    // 2048 x 1536 seems to work just fine on iPad Retina
-    
-    //CGSize renderSize = CGSizeMake(1920, 1080);
-    //CGSize renderSize = CGSizeMake(2048, 1536);
-    
-    //int renderWidth = (int) renderSize.width;
-    //int renderHeight = (int) renderSize.height;
-    
-    // Render CoreVideo to a NxN square so that square pixels do not distort
-    
-#if defined(LOGGING)
-    NSLog(@"encode input dimensions %4d x %4d", width, height);
-#endif // LOGGING
-    
-    CVPixelBufferRef largerBuffer;
-    
-    if (CGSizeEqualToSize(imgSize, renderSize)) {
-      // No resize needed
-      largerBuffer = pixBuffer;
-      
-      CVPixelBufferRetain(largerBuffer);
-    } else {
-      int srcWidth = (int) CVPixelBufferGetWidth(pixBuffer);
-      int srcHeight = (int) CVPixelBufferGetHeight(pixBuffer);
-      int pixBufferNumBytes = (int) CVPixelBufferGetBytesPerRow(pixBuffer) * srcHeight;
-      
-      {
-        int status = CVPixelBufferLockBaseAddress(pixBuffer, 0);
-        assert(status == kCVReturnSuccess);
-      }
-      void *pixelsPtr = CVPixelBufferGetBaseAddress(pixBuffer);
-      assert(pixelsPtr);
-      
-      size_t bitsPerComponent = 8;
-      size_t numComponents = 4;
-      size_t bitsPerPixel = bitsPerComponent * numComponents;
-      size_t bytesPerRow = CVPixelBufferGetBytesPerRow(pixBuffer);
-      
-      CGBitmapInfo bitmapInfo = kCGBitmapByteOrder32Host | kCGImageAlphaNoneSkipFirst;
-      
-      CGDataProviderReleaseDataCallback releaseData = NULL;
-      
-      CGDataProviderRef dataProviderRef = CGDataProviderCreateWithData(
-                                                                       NULL,
-                                                                       pixelsPtr,
-                                                                       pixBufferNumBytes,
-                                                                       releaseData);
-
-      BOOL shouldInterpolate = TRUE;
-        
-      CGColorRenderingIntent renderIntent = kCGRenderingIntentDefault;
-        
-      CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB(); // iOS sRGB
-      
-      CGImageRef inImageRef = CGImageCreate(srcWidth, srcHeight, bitsPerComponent, bitsPerPixel, bytesPerRow,
-                                            colorSpace, bitmapInfo, dataProviderRef, NULL,
-                                            shouldInterpolate, renderIntent);
-
-      CGDataProviderRelease(dataProviderRef);
-      
-      CGColorSpaceRelease(colorSpace);
-
-      assert(inImageRef);
-      
-      // Dump original before resize action
-      
-      if (dumpFramesImages)
-      {
-        NSString *dumpFilename = [NSString stringWithFormat:@"%@_orig_F%d.png", resNoSuffix, frameOffset];
-        NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-        
-        UIImage *rerenderedInputImg = [UIImage imageWithCGImage:inImageRef];
-        NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
-        [pngData writeToFile:tmpPath atomically:TRUE];
-        
-        //NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
-      }
-      
-      // Output image as CoreGraphics buffer
-      
-      CGFrameBuffer *cgFramebuffer = [CGFrameBuffer cGFrameBufferWithBppDimensions:24 width:renderSize.width height:renderSize.height];
-      
-      // Render the src image into a large framebuffer
-      
-      BOOL worked = [cgFramebuffer renderCGImage:inImageRef];
-      assert(worked);
-      
-      CGImageRelease(inImageRef);
-      
-      {
-        int status = CVPixelBufferUnlockBaseAddress(pixBuffer, 0);
-        assert(status == kCVReturnSuccess);
-      }
-      
-      CGImageRef resizedCgImgRef = [cgFramebuffer createCGImageRef];
-      
-      if (dumpFramesImages)
-      {
-        NSString *dumpFilename = [NSString stringWithFormat:@"%@_resized_F%d.png", resNoSuffix, frameOffset];
-        NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-        
-        UIImage *rerenderedInputImg = [UIImage imageWithCGImage:resizedCgImgRef];
-        NSData *pngData = UIImagePNGRepresentation(rerenderedInputImg);
-        [pngData writeToFile:tmpPath atomically:TRUE];
-        
-        //NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)rerenderedInputImg.size.width, (int)rerenderedInputImg.size.height);
-      }
-      
-      largerBuffer = [self.class pixelBufferFromCGImage:resizedCgImgRef
-                                           renderSize:renderSize
-                                                 dump:FALSE
-                                                asYUV:FALSE];
-      
-      CGImageRelease(resizedCgImgRef);
-    }
-    
-    if (dumpFramesImages)
-    {
-      CIImage *largerCiImage = [CIImage imageWithCVPixelBuffer:largerBuffer];
-      
-      UIGraphicsBeginImageContext(renderSize);
-      CGRect rect;
-      rect.origin = CGPointZero;
-      rect.size   = renderSize;
-      UIImage *remLargerImage = [UIImage imageWithCIImage:largerCiImage];
-      [remLargerImage drawInRect:rect];
-      UIImage *largerRenderedImg = UIGraphicsGetImageFromCurrentImageContext();
-      UIGraphicsEndImageContext();
-      
-      NSString *dumpFilename = [NSString stringWithFormat:@"%@_F%d.png", resNoSuffix, frameOffset];
-      NSString *tmpPath = [NSTemporaryDirectory() stringByAppendingPathComponent:dumpFilename];
-      
-      NSData *pngData = UIImagePNGRepresentation(largerRenderedImg);
-      [pngData writeToFile:tmpPath atomically:TRUE];
-      
-//      NSLog(@"wrote \"%@\" at size %d x %d", tmpPath, (int)largerRenderedImg.size.width, (int)largerRenderedImg.size.height);
-    }
-    
-    // Render CoreVideo to a NxN square so that square pixels do not distort
-    
-#if defined(LOGGING)
-    int largerWidth = (int) CVPixelBufferGetWidth(largerBuffer);
-    int largerHeight = (int) CVPixelBufferGetHeight(largerBuffer);
-    NSLog(@"encode output dimensions %4d x %4d", largerWidth, largerHeight);
-#endif // LOGGING
-    
-    //NSLog(@"CVPixelBufferRef: %@", pixBuffer);
-      
-    __block BOOL encodeFrameErrorCondition = FALSE;
-    
-    frameEncoder.sampleBufferBlock = ^(CMSampleBufferRef sampleBuffer) {
-      // If sampleBuffer is NULL, then the frame could not be encoded.
-      
-      if (sampleBuffer == NULL) {
-        //NSAssert(sampleBuffer, @"sampleBuffer argument to H264FrameEncoder.sampleBufferBlock is NULL");
-        encodeFrameErrorCondition = TRUE;
-        return;
-      }
-      
-      [encodedH264Buffers addObject:(__bridge id)sampleBuffer];
-      
-      int numBytes = (int) CMSampleBufferGetSampleSize(sampleBuffer, 0);
-      
-#if defined(LOGGING)
-      NSLog(@"encoded buffer as %6d H264 bytes", numBytes);
-#endif // LOGGING
-      
-      totalEncodeNumBytes += numBytes;
-    };
-    
-#if TARGET_IPHONE_SIMULATOR
-    // No-op
-#else
-    OSType bufferPixelType = CVPixelBufferGetPixelFormatType(largerBuffer);
-    if (bufferPixelType == kCVPixelFormatType_32BGRA) {
-      // Already converted from YUV to BGRA
-    } else {
-      assert([self getPixelType] == bufferPixelType);
-    }
-#endif // TARGET_IPHONE_SIMULATOR
-    
-    BOOL worked = [frameEncoder encodeH264CoreMediaFrame:largerBuffer];
-
-    if (worked) {
-      [frameEncoder waitForFrame];
-    }
-    
-    CVPixelBufferRelease(largerBuffer);
-    
-    if (encodeFrameErrorCondition == TRUE) {
-      return FALSE;
-    }
-      
-    if (worked == FALSE) {
-      return FALSE;
-    } else {
-      return TRUE;
-    }
-  };
-
   // Encode each frame, one at a time, so that totaly memory used is minimized
   
-  BOOL worked = [self.class decodeCoreVideoFramesFromMOV:movieFilePath
-                                                   asYUV:asYUV
-                                        encodeFrameBlock:encodeFrameBlock];
+  BOOL worked = [self decodeCoreVideoFramesFromMOV:movieFilePath
+                                             asYUV:asYUV
+                                        renderSize:renderSize
+                                      frameEncoder:frameEncoder
+                                encodedH264Buffers:encodedH264Buffers];
 
   if (worked == FALSE) {
     NSLog(@"decodeCoreVideoFramesFromMOV failed for %@", movieFilePath);
     
     [encodedH264Buffers removeAllObjects];
+  } else {
+#if defined(LOGGING)
+    int totalEncodeNumBytes = 0;
+    for ( id obj in encodedH264Buffers ) {
+      CMSampleBufferRef sampleBuffer = (__bridge CMSampleBufferRef) obj;
+      totalEncodeNumBytes += (int) CMSampleBufferGetSampleSize(sampleBuffer, 0);
+    }
+    int totalkb = totalEncodeNumBytes / 1000;
+    int totalmb = totalkb / 1000;
+    NSLog(@"encoded \"%@\" as %d frames", resTail, (int)encodedH264Buffers.count);
+    NSLog(@"total encoded num bytes %d, %d kB, %d mB", totalEncodeNumBytes, totalkb, totalmb);
+#endif // LOGGING
   }
   
   [frameEncoder endSession];
-  
-#if defined(LOGGING)
-  NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
-#endif // LOGGING
 }
 
 @end
