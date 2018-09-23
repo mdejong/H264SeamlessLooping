@@ -21,11 +21,11 @@
 
 #import "CGFrameBuffer.h"
 
-#if defined(DEBUG)
-static const int dumpFramesImages = 1;
-#else
+//#if defined(DEBUG)
+//static const int dumpFramesImages = 1;
+//#else
 static const int dumpFramesImages = 0;
-#endif // DEBUG
+//#endif // DEBUG
 
 //#define LOGGING 1
 
@@ -241,8 +241,6 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   
   [aVAssetReader addOutput:aVAssetReaderOutput];
   
-  aVAssetReaderOutput = aVAssetReaderOutput;
-  
   // start reading
   
   NSAssert(aVAssetReader, @"aVAssetReader");
@@ -270,7 +268,7 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
     CMSampleBufferRef sampleBuffer = NULL;
     sampleBuffer = [aVAssetReaderOutput copyNextSampleBuffer];
     
-    if (sampleBuffer == nil) {
+    if (sampleBuffer == NULL) {
       // Another frame could not be loaded, this is the normal
       // termination condition at the end of the file.
       break;
@@ -308,11 +306,59 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
 
 // Decompress and then recompress each frame of H264 video as keyframes that
 // can be rendered directly without holding a stream decode resource open.
+// If an error is encountered during the encode/decode process then nil
+// is returned (this can happen when app is put into the background)
 
 + (NSArray*) recompressKeyframesOnBackgroundThread:(NSString*)resourceName
                                      frameDuration:(float)frameDuration
                                         renderSize:(CGSize)renderSize
                                         aveBitrate:(int)aveBitrate
+{
+  //__block
+  NSMutableArray *encodedH264Buffers = [NSMutableArray array];
+  
+  //dispatch_sync(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+  
+  @autoreleasepool {
+    [self recompressKeyframesOnBackgroundThreadImpl:resourceName
+                                      frameDuration:frameDuration
+                                         renderSize:renderSize
+                                         aveBitrate:aveBitrate
+                                 encodedH264Buffers:encodedH264Buffers];
+  }
+
+  //});
+  
+  //[NSThread sleepForTimeInterval:0.1];
+  
+  NSArray *retArr;
+  
+  if (encodedH264Buffers.count == 0) {
+    retArr = nil;
+  } else {
+    retArr = [NSArray arrayWithArray:encodedH264Buffers];
+  }
+  
+  encodedH264Buffers = nil;
+  
+  return retArr;
+}
+
+// This implementation is meant to be called from inside an autorelease block
+// so that tmp objects created in the scope of this method execution will
+// be cleaned up even if recompressKeyframesOnBackgroundThread is invoked
+// over and over in a loop or without leaving a calling scope.
+//
+// Decompress and then recompress each frame of H264 video as keyframes that
+// can be rendered directly without holding a stream decode resource open.
+// If an error is encountered during the encode/decode process then nil
+// is returned (this can happen when app is put into the background)
+
++ (void) recompressKeyframesOnBackgroundThreadImpl:(NSString*)resourceName
+                                     frameDuration:(float)frameDuration
+                                        renderSize:(CGSize)renderSize
+                                        aveBitrate:(int)aveBitrate
+                                    encodedH264Buffers:(NSMutableArray*)encodedH264Buffers
 {
 #if defined(LOGGING)
   NSLog(@"recompressKeyframesOnBackgroundThread");
@@ -320,6 +366,8 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   
   NSAssert([NSThread isMainThread] == FALSE, @"isMainThread");
 
+  [encodedH264Buffers removeAllObjects];
+  
   NSString *resTail = [resourceName lastPathComponent];
   NSString *resNoSuffix = [[resourceName lastPathComponent] stringByDeletingPathExtension];
   
@@ -354,8 +402,6 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
   frameEncoder.aveBitrate = aveBitrate;
   
   // Begin to decode frames
-  
-  NSMutableArray *encodedH264Buffers = [NSMutableArray array];
   
   __block int totalEncodeNumBytes = 0;
   
@@ -576,6 +622,8 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
 
   if (worked == FALSE) {
     NSLog(@"decodeCoreVideoFramesFromMOV failed for %@", movieFilePath);
+    
+    [encodedH264Buffers removeAllObjects];
   }
   
   [frameEncoder endSession];
@@ -583,12 +631,6 @@ typedef BOOL (^EncodeFrameBlockT)(int, CVPixelBufferRef);
 #if defined(LOGGING)
   NSLog(@"total encoded num bytes %d", totalEncodeNumBytes);
 #endif // LOGGING
-  
-  if (worked == FALSE) {
-    return nil;
-  } else {
-    return [NSArray arrayWithArray:encodedH264Buffers];
-  }
 }
 
 @end

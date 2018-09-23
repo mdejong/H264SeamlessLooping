@@ -21,6 +21,8 @@
 
 // Decompress and then recompress each frame of H264 video as keyframes that
 // can be rendered directly without holding a stream decode resource open.
+// If an error is encountered during the encode/decode process then nil
+// is returned (this can happen when app is put into the background)
 
 + (NSArray*) recompressKeyframesOnBackgroundThread:(NSString*)resourceName
                                      frameDuration:(float)frameDuration

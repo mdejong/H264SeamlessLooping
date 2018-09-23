@@ -164,9 +164,10 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
     offset = 0;
   }
   
-  CMTime pts = CMTimeMake(600 * offset, 600);
+  //CMTime pts = CMTimeMake(600 * offset, 600);
+  //status = VTCompressionSessionCompleteFrames(session, pts);
   
-  status = VTCompressionSessionCompleteFrames(session, pts);
+  status = VTCompressionSessionCompleteFrames(session, kCMTimeIndefinite);
     
   if (status == kVTInvalidSessionErr) {
     NSLog(@"VTCompressionSessionCompleteFrames status kVTInvalidSessionErr\n");
@@ -185,7 +186,6 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   if (noErr != status) {
     NSLog(@"VTSessionSetProperty: Cannot set kVTCompressionPropertyKey_RealTime.\n");
-    return;
   }
   
   status = VTSessionSetProperty(session,
@@ -194,7 +194,6 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   if (noErr != status) {
     NSLog(@"VTSessionSetProperty: Cannot set kVTCompressionPropertyKey_ProfileLevel.\n");
-    return;
   }
 
   status = VTSessionSetProperty(session,
@@ -203,7 +202,6 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   if (noErr != status) {
     NSLog(@"VTSessionSetProperty: Cannot set kVTCompressionPropertyKey_AllowFrameReordering.\n");
-    return;
   }
 
   // Must be a keyframe
@@ -214,7 +212,6 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   if (noErr != status) {
     NSLog(@"VTSessionSetProperty: Cannot set kVTCompressionPropertyKey_MaxKeyFrameInterval.\n");
-    return;
   }
   
   //NSNumber *bitrate = @(700);
@@ -246,14 +243,13 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   if (noErr != status) {
     NSLog(@"VTSessionSetProperty: Cannot set kVTCompressionPropertyKey_AverageBitRate.\n");
-    return;
   }
 
   //  status = VTSessionSetProperty(session, kVTCompressionPropertyKey_DataRateLimits, (__bridge CFArrayRef)@[800 * 1024 / 8, 1]);
   
   /*
    
-  // Not as effective, baselien profile
+  // Not as effective, baseline profile compression
   
   status = VTSessionSetProperty(session,
                                 kVTCompressionPropertyKey_H264EntropyMode,
@@ -261,7 +257,6 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   if (noErr != status) {
     NSLog(@"VTSessionSetProperty: Cannot set kVTCompressionPropertyKey_H264EntropyMode.\n");
-    return;
   }
   
   */
@@ -274,14 +269,12 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
   
   if (noErr != status) {
     NSLog(@"VTSessionSetProperty: Cannot set kVTCompressionPropertyKey_H264EntropyMode.\n");
-    return;
   }
   
   status = VTCompressionSessionPrepareToEncodeFrames(session);
   
   if (noErr != status) {
     NSLog(@"VTCompressionSessionPrepareToEncodeFrames %d\n", (int)status);
-    return;
   }
 }
 
@@ -296,7 +289,9 @@ void VideoToolboxCallback(void *outputCallbackRefCon,
                           CMSampleBufferRef sampleBuffer )
 {
   H264FrameEncoder *obj = (__bridge H264FrameEncoder *)outputCallbackRefCon;
-  assert(obj);
+  if (obj == nil) {
+    assert(obj);
+  }
   
   if (status != noErr) {
     NSLog(@"Error: %@", [NSError errorWithDomain:NSOSStatusErrorDomain code:status userInfo:nil]);
